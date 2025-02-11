@@ -1,0 +1,43 @@
+# FTP Brute Force Login Script
+
+A Python script that performs a brute-force attack on FTP servers using the `rockyou.txt` wordlist. The script automatically detects the local machine's IP address as the FTP server and attempts to log in with a given username and multiple passwords from the wordlist. The script connects on port 21, the default FTP port.
+
+## Features:
+- **Automatic Server Detection**: The script detects the local machine’s IP address as the FTP server.
+- **Wordlist-based Brute Force**: Uses `rockyou.txt` for password attempts.
+- **Port 21 Support**: Connects to FTP on port 21, the default FTP port.
+- **Error Handling**: Provides feedback on success or failure for each password attempt.
+
+## Requirements:
+- Python 3.x
+- `rockyou.txt` (password list)
+  - Due to its large size, this file is not included in the repository. You can download it from one of the following sources:
+    - [Kali Linux RockYou Wordlist](https://github.com/packetstormsecurity/wordlists/blob/master/rockyou.txt)
+    - [Download RockYou.txt](https://www.unix.com/showthread.php?t=100139)
+  - Ensure that `rockyou.txt` is placed in the same directory as the script.
+
+## How to Use:
+
+1. **Download or Prepare `rockyou.txt`:**
+   - Download `rockyou.txt` from one of the links provided above or use the one available in Kali Linux under `/usr/share/wordlists/rockyou.txt`.
+   - Make sure the `rockyou.txt` file is in the same directory as this script.
+
+2. **Clone or Download the Script:**
+   - Clone the repository or download the script to your local machine.
+
+3. **Run the Script:**
+   - Open a terminal and navigate to the directory where the script is located.
+   - Run the script using the following command:
+     ```bash
+     python3 ftp_bruteforce.py
+     ```
+
+4. **Input FTP Details:**
+   - Enter the **username** when prompted.
+   - The script will attempt to brute force the password using `rockyou.txt`.
+
+## Disclaimer:
+This script is for **educational purposes** and should only be used for **ethical penetration testing** with permission. **Unauthorized access** to systems is illegal.
+
+## License:
+This project is licensed under the MIT License.
