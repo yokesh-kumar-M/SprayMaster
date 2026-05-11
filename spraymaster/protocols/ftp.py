@@ -1,36 +1,34 @@
-# Refactored ftp.py to handle SSL and to use better logging.
 import ftplib
-import logging
+
 
 def try_login(host, username, password, args):
-    """
-    Attempts to log in to an FTP server.
-    
-    Args:
-        host (str): The target host.
-        username (str): The username to try.
-        password (str): The password to try.
-        args (argparse.Namespace): The command-line arguments.
-    """
-    logger = logging.getLogger("SprayMaster")
+    use_ssl = getattr(args, "ssl", False) or getattr(args, "protocol", "") == "ftps"
     port = args.port if args.port else 21
-    
+    timeout = getattr(args, "timeout", 10)
+    result = {
+        "status": "fail",
+        "host": host,
+        "port": port,
+        "user": username,
+        "pass": password,
+        "protocol": getattr(args, "protocol", "ftp"),
+        "error": None,
+    }
     try:
-        if args.ssl:
-            # Use FTP_TLS for a secure connection if --ssl is specified.
+        if use_ssl:
             ftp = ftplib.FTP_TLS()
-            ftp.connect(host, port, timeout=10)
-            ftp.auth() # Explicit FTPS
-            ftp.prot_p() # Set protection level to private
+            ftp.connect(host, port, timeout=timeout)
+            ftp.auth()
+            ftp.prot_p()
         else:
-            # Use standard FTP for an unencrypted connection.
             ftp = ftplib.FTP()
-            ftp.connect(host, port, timeout=10)
-            
+            ftp.connect(host, port, timeout=timeout)
         ftp.login(username, password)
-        logger.info(f"[SUCCESS] {host}:{port} | {username}:{password}")
+        result["status"] = "success"
         ftp.quit()
     except ftplib.error_perm:
-        logger.debug(f"[FAIL] {host}:{port} | {username}:{password}")
+        result["status"] = "fail"
     except Exception as e:
-        logger.error(f"[ERROR] {host}:{port} | {username}:{password} -> {e}")
+        result["status"] = "error"
+        result["error"] = str(e)
+    return result

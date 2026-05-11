@@ -1,2 +1,14 @@
-# Currently only standard library modules used
-# Future: Add argparse, requests, paramiko, aioftp, etc.
+# Core — always required
+rich
+paramiko
+requests
+
+# Optional — install for specific protocol support
+pymysql          # mysql
+psycopg2-binary  # postgres
+# pymssql        # mssql (may need native libs: pip install pymssql)
+ldap3            # ldap / ldaps
+redis            # redis
+impacket         # smb
+pycryptodome     # vnc
+pysnmp           # snmp
