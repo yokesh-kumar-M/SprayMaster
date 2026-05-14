@@ -3,7 +3,6 @@ import logging
 import time
 import threading
 
-from protocols import PROTOCOL_REGISTRY
 from rich.progress import (
     Progress,
     SpinnerColumn,
@@ -14,6 +13,9 @@ from rich.progress import (
     MofNCompleteColumn,
 )
 from rich.table import Table
+
+from protocols import PROTOCOL_REGISTRY, PROTOCOL_REQUIRES
+from core.output import OutputManager
 
 
 class AttackEngine:
@@ -36,8 +38,6 @@ class AttackEngine:
     def run(self):
         login_func = PROTOCOL_REGISTRY.get(self.args.protocol)
         if not login_func:
-            from protocols import PROTOCOL_REQUIRES
-
             dep = PROTOCOL_REQUIRES.get(self.args.protocol, "unknown")
             self.logger.error(
                 f"Protocol [bold]{self.args.protocol}[/bold] is not available. "
@@ -71,8 +71,6 @@ class AttackEngine:
         total = len(tasks)
 
         if getattr(self.args, "output", None):
-            from core.output import OutputManager
-
             self.output_manager = OutputManager(
                 self.args.output,
                 getattr(self.args, "output_format", "text"),

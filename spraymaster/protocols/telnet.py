@@ -58,7 +58,7 @@ def try_login(host, username, password, args):
 
         sock.sendall(username.encode("utf-8") + b"\r\n")
 
-        raw = _recv_until(sock, [b"password:", b"passwd:"], timeout)
+        _recv_until(sock, [b"password:", b"passwd:"], timeout)
         sock.sendall(password.encode("utf-8") + b"\r\n")
 
         raw = _recv_until(
@@ -97,12 +97,9 @@ def try_login(host, username, password, args):
     except (ConnectionRefusedError, socket.timeout, OSError) as e:
         result["status"] = "error"
         result["error"] = str(e)
-    except Exception as e:
-        result["status"] = "error"
-        result["error"] = str(e)
     finally:
         try:
             sock.close()
-        except Exception:
+        except OSError:
             pass
     return result

@@ -41,7 +41,7 @@ def try_login(host, username, password, args):
         else:
             result["status"] = "error"
             result["error"] = str(e)
-    except Exception as e:
+    except psycopg2.Error as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

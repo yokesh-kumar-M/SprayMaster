@@ -30,10 +30,7 @@ def try_login(host, username, password, args):
         result["status"] = "success"
     except paramiko.AuthenticationException:
         result["status"] = "fail"
-    except (paramiko.SSHException, socket.error) as e:
-        result["status"] = "error"
-        result["error"] = str(e)
-    except Exception as e:
+    except (paramiko.SSHException, socket.error, OSError, EOFError) as e:
         result["status"] = "error"
         result["error"] = str(e)
     finally:

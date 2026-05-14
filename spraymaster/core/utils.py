@@ -1,21 +1,22 @@
 def load_list(path: str) -> list:
-    with open(path, "r", encoding="latin-1") as f:
-        return [
-            line.strip()
-            for line in f
-            if line.strip() and not line.strip().startswith("#")
-        ]
+    """Return a list of non-empty, non-comment lines from ``path``."""
+    with open(path, "r", encoding="latin-1") as fh:
+        lines = []
+        for raw in fh:
+            stripped = raw.strip()
+            if stripped and not stripped.startswith("#"):
+                lines.append(stripped)
+        return lines
 
 
 def load_combo_list(path: str) -> list:
     """Return list of (user, pass) tuples from a user:pass file."""
     pairs = []
-    with open(path, "r", encoding="latin-1") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+    with open(path, "r", encoding="latin-1") as fh:
+        for raw in fh:
+            stripped = raw.strip()
+            if not stripped or stripped.startswith("#") or ":" not in stripped:
                 continue
-            if ":" in line:
-                user, _, password = line.partition(":")
-                pairs.append((user, password))
+            user, _, password = stripped.partition(":")
+            pairs.append((user, password))
     return pairs

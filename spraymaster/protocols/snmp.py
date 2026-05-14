@@ -31,7 +31,7 @@ def try_login(host, username, password, args):
             ContextData(),
             ObjectType(ObjectIdentity("SNMPv2-MIB", "sysDescr", 0)),
         )
-        error_indication, error_status, error_index, var_binds = next(iterator)
+        error_indication, error_status, _index, _binds = next(iterator)
 
         if error_indication:
             err = str(error_indication).lower()
@@ -44,7 +44,7 @@ def try_login(host, username, password, args):
             result["status"] = "fail"
         else:
             result["status"] = "success"
-    except Exception as e:
+    except (OSError, ConnectionError, StopIteration) as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

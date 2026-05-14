@@ -1,15 +1,32 @@
 import socket
 import struct
-from Crypto.Cipher import DES  # requires pycryptodome
+
+# NOTE: DES in ECB mode is intentionally used here because the VNC RFB
+# protocol (RFC 6143, section 7.2.2) MANDATES it for the VNC Authentication
+# security type. Replacing it with a modern cipher would break interoperability
+# with every VNC server in existence. This is a wire-format requirement, not
+# an application choice, and the secret transmitted is a one-shot 16-byte
+# server challenge — not user data. Static analyzers should treat the following
+# imports and Cipher calls as protocol-required and not as a vulnerability.
+from Crypto.Cipher import DES  # noqa: S413  # nosec B413 - required by VNC RFB protocol
 
 
-def _reverse_bits(b):
-    return int(f"{b:08b}"[::-1], 2)
+def _reverse_bits(byte):
+    return int(f"{byte:08b}"[::-1], 2)
 
 
 def _make_des_key(password):
+    # VNC keys are exactly 8 bytes, padded with NULs, with each byte bit-reversed
+    # — also part of the RFB authentication spec.
     raw = (password.encode("utf-8") + b"\x00" * 8)[:8]
     return bytes(_reverse_bits(b) for b in raw)
+
+
+def _vnc_encrypt(challenge, password):
+    key = _make_des_key(password)
+    # DES-ECB is the cipher mandated by RFB §7.2.2. See module docstring above.
+    cipher = DES.new(key, DES.MODE_ECB)  # noqa: S305  # nosec B305 - protocol-mandated
+    return cipher.encrypt(challenge[:8]) + cipher.encrypt(challenge[8:])
 
 
 def try_login(host, username, password, args):
@@ -45,10 +62,7 @@ def try_login(host, username, password, args):
             result["status"] = "success"
         elif sec_type == 2:
             challenge = sock.recv(16)
-            key = _make_des_key(password)
-            cipher = DES.new(key, DES.MODE_ECB)
-            response = cipher.encrypt(challenge[:8]) + cipher.encrypt(challenge[8:])
-            sock.sendall(response)
+            sock.sendall(_vnc_encrypt(challenge, password))
             auth_result = struct.unpack(">I", sock.recv(4))[0]
             result["status"] = "success" if auth_result == 0 else "fail"
         else:
@@ -58,15 +72,12 @@ def try_login(host, username, password, args):
         if "refused" in str(e).lower() or "server" in str(e).lower():
             result["status"] = "error"
             result["error"] = str(e)
-    except (socket.timeout, OSError) as e:
-        result["status"] = "error"
-        result["error"] = str(e)
-    except Exception as e:
+    except (socket.timeout, OSError, struct.error) as e:
         result["status"] = "error"
         result["error"] = str(e)
     finally:
         try:
             sock.close()
-        except Exception:
+        except OSError:
             pass
     return result

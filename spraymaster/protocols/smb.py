@@ -1,4 +1,14 @@
-from impacket.smbconnection import SMBConnection
+from impacket.smbconnection import SMBConnection, SessionError
+
+
+_AUTH_FAILURE_MARKERS = (
+    "status_logon_failure",
+    "wrong password",
+    "access_denied",
+    "invalid credentials",
+    "authentication_failed",
+)
+_NETWORK_ERROR_MARKERS = ("connection", "timeout", "refused", "unreachable")
 
 
 def try_login(host, username, password, args):
@@ -24,20 +34,20 @@ def try_login(host, username, password, args):
         conn.login(user, password, domain=domain)
         conn.logoff()
         result["status"] = "success"
-    except Exception as e:
+    except SessionError:
+        result["status"] = "fail"
+    except (OSError, ConnectionError) as e:
         err = str(e).lower()
-        if any(
-            x in err
-            for x in [
-                "status_logon_failure",
-                "wrong password",
-                "access_denied",
-                "invalid credentials",
-                "authentication_failed",
-            ]
-        ):
+        if any(x in err for x in _NETWORK_ERROR_MARKERS):
+            result["status"] = "error"
+            result["error"] = str(e)
+        else:
             result["status"] = "fail"
-        elif any(x in err for x in ["connection", "timeout", "refused", "unreachable"]):
+    except Exception as e:  # noqa: BLE001  # impacket raises a wide set of typed exceptions
+        err = str(e).lower()
+        if any(x in err for x in _AUTH_FAILURE_MARKERS):
+            result["status"] = "fail"
+        elif any(x in err for x in _NETWORK_ERROR_MARKERS):
             result["status"] = "error"
             result["error"] = str(e)
         else:

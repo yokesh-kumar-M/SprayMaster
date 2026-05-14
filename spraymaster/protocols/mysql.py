@@ -25,13 +25,13 @@ def try_login(host, username, password, args):
         conn.close()
         result["status"] = "success"
     except pymysql.err.OperationalError as e:
-        code = e.args[0]
+        code = e.args[0] if e.args else None
         if code in (1045, 1044, 1698):  # Access denied / auth errors
             result["status"] = "fail"
         else:
             result["status"] = "error"
             result["error"] = str(e)
-    except Exception as e:
+    except pymysql.err.MySQLError as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

@@ -2,6 +2,7 @@ import redis as redis_lib
 from redis.exceptions import (
     AuthenticationError,
     ConnectionError as RedisConnError,
+    RedisError,
     ResponseError,
 )
 
@@ -41,7 +42,7 @@ def try_login(host, username, password, args):
     except RedisConnError as e:
         result["status"] = "error"
         result["error"] = str(e)
-    except Exception as e:
+    except RedisError as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

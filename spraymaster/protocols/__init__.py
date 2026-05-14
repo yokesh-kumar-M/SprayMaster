@@ -67,16 +67,21 @@ def _load():
 
 
 def _try(name, relative_module, registry_keys):
+    # Optional protocol — skip it if its dependency is missing or fails to
+    # initialise. We deliberately tolerate any import-time failure here because
+    # an unrelated optional protocol must never prevent SprayMaster from
+    # starting; the user is informed via the "Unavailable" banner instead.
     import importlib
 
     try:
         mod = importlib.import_module(relative_module, package=__name__)
-        for key in registry_keys:
-            PROTOCOL_REGISTRY[key] = mod.try_login
-    except (ImportError, ModuleNotFoundError):
-        pass
-    except Exception:
-        pass
+    except (ImportError, ModuleNotFoundError, OSError):
+        return
+    except Exception:  # noqa: BLE001 - optional plugin must not break startup
+        return
+
+    for key in registry_keys:
+        PROTOCOL_REGISTRY[key] = mod.try_login
 
 
 _load()

@@ -35,8 +35,8 @@ def try_login(host, username, password, args):
     if headers_raw:
         try:
             headers = _json.loads(headers_raw)
-        except Exception:
-            pass
+        except (_json.JSONDecodeError, TypeError):
+            headers = {}
 
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
 
@@ -107,7 +107,7 @@ def try_login(host, username, password, args):
     except requests.exceptions.Timeout:
         result["status"] = "error"
         result["error"] = "Connection timed out"
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result
