@@ -1,10 +1,10 @@
 import smtplib
-import socket
 
 
 def try_login(host, username, password, args):
     use_ssl = getattr(args, "ssl", False) or getattr(args, "protocol", "") == "smtps"
-    port = args.port if args.port else (465 if use_ssl else 587)
+    default_port = 465 if use_ssl else 587
+    port = args.port if args.port else default_port
     timeout = getattr(args, "timeout", 10)
     result = {
         "status": "fail",
@@ -31,7 +31,7 @@ def try_login(host, username, password, args):
         result["status"] = "success"
     except smtplib.SMTPAuthenticationError:
         result["status"] = "fail"
-    except (smtplib.SMTPException, socket.error, OSError) as e:
+    except (smtplib.SMTPException, OSError) as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

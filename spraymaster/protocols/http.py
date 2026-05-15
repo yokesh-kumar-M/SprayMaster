@@ -9,7 +9,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 def try_login(host, username, password, args):
     proto = getattr(args, "protocol", "http")
     use_ssl = getattr(args, "ssl", False) or proto == "https"
-    port = args.port if args.port else (443 if use_ssl else 80)
+    default_port = 443 if use_ssl else 80
+    port = args.port if args.port else default_port
     timeout = getattr(args, "timeout", 10)
     path = getattr(args, "http_path", "/") or "/"
     method = (getattr(args, "http_method", "POST") or "POST").upper()
@@ -46,9 +47,14 @@ def try_login(host, username, password, args):
         if form_data:
             body = form_data.replace("^USER^", username).replace("^PASS^", password)
             if method == "GET":
-                params = dict(
-                    pair.split("=", 1) for pair in body.split("&") if "=" in pair
-                )
+                params = {
+                    k: v
+                    for k, v in (
+                        pair.split("=", 1)
+                        for pair in body.split("&")
+                        if "=" in pair
+                    )
+                }
                 resp = session.get(
                     url,
                     params=params,

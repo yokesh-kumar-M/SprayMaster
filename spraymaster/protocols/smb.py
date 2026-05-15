@@ -36,7 +36,7 @@ def try_login(host, username, password, args):
         result["status"] = "success"
     except SessionError:
         result["status"] = "fail"
-    except (OSError, ConnectionError) as e:
+    except OSError as e:
         err = str(e).lower()
         if any(x in err for x in _NETWORK_ERROR_MARKERS):
             result["status"] = "error"

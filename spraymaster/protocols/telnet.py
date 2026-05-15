@@ -94,7 +94,7 @@ def try_login(host, username, password, args):
         elif any(s in resp for s in fail_signs):
             result["status"] = "fail"
         # else: stays "fail" by default
-    except (ConnectionRefusedError, socket.timeout, OSError) as e:
+    except OSError as e:
         result["status"] = "error"
         result["error"] = str(e)
     finally:

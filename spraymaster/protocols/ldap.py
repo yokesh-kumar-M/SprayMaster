@@ -4,7 +4,8 @@ from ldap3.core.exceptions import LDAPBindError, LDAPSocketOpenError, LDAPExcept
 
 def try_login(host, username, password, args):
     use_ssl = getattr(args, "ssl", False) or getattr(args, "protocol", "") == "ldaps"
-    port = args.port if args.port else (636 if use_ssl else 389)
+    default_port = 636 if use_ssl else 389
+    port = args.port if args.port else default_port
     timeout = getattr(args, "timeout", 10)
     result = {
         "status": "fail",

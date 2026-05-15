@@ -44,7 +44,7 @@ def try_login(host, username, password, args):
             result["status"] = "fail"
         else:
             result["status"] = "success"
-    except (OSError, ConnectionError, StopIteration) as e:
+    except (OSError, StopIteration) as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

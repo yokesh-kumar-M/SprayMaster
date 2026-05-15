@@ -1,5 +1,4 @@
 import ftplib
-import socket
 
 
 def try_login(host, username, password, args):
@@ -32,7 +31,7 @@ def try_login(host, username, password, args):
     except ftplib.all_errors as e:
         result["status"] = "error"
         result["error"] = str(e)
-    except (socket.error, OSError) as e:
+    except OSError as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

@@ -1,10 +1,10 @@
 import imaplib
-import socket
 
 
 def try_login(host, username, password, args):
     use_ssl = getattr(args, "ssl", False) or getattr(args, "protocol", "") == "imaps"
-    port = args.port if args.port else (993 if use_ssl else 143)
+    default_port = 993 if use_ssl else 143
+    port = args.port if args.port else default_port
     timeout = getattr(args, "timeout", 10)
     result = {
         "status": "fail",
@@ -40,7 +40,7 @@ def try_login(host, username, password, args):
         else:
             result["status"] = "error"
             result["error"] = str(e)
-    except (socket.error, OSError) as e:
+    except OSError as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

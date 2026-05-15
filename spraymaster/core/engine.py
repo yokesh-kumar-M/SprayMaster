@@ -35,7 +35,28 @@ class AttackEngine:
         self.output_manager = None
 
     # ------------------------------------------------------------------
-    def run(self):
+    def _build_tasks(self):
+        if getattr(self.args, "combo", None):
+            return [
+                (t, u, p)
+                for t in self.targets
+                for u, p in zip(self.users, self.passwords)
+            ]
+        if self.args.spray:
+            return [
+                (t, u, p)
+                for p in self.passwords
+                for t in self.targets
+                for u in self.users
+            ]
+        return [
+            (t, u, p)
+            for t in self.targets
+            for u in self.users
+            for p in self.passwords
+        ]
+
+    def _resolve_login_func(self):
         login_func = PROTOCOL_REGISTRY.get(self.args.protocol)
         if not login_func:
             dep = PROTOCOL_REQUIRES.get(self.args.protocol, "unknown")
@@ -43,41 +64,10 @@ class AttackEngine:
                 f"Protocol [bold]{self.args.protocol}[/bold] is not available. "
                 f"Install the required dependency: [cyan]pip install {dep}[/cyan]"
             )
-            return
+        return login_func
 
-        self.start_time = time.time()
-
-        if getattr(self.args, "combo", None):
-            tasks = [
-                (t, u, p)
-                for t in self.targets
-                for u, p in zip(self.users, self.passwords)
-            ]
-        elif self.args.spray:
-            tasks = [
-                (t, u, p)
-                for p in self.passwords
-                for t in self.targets
-                for u in self.users
-            ]
-        else:
-            tasks = [
-                (t, u, p)
-                for t in self.targets
-                for u in self.users
-                for p in self.passwords
-            ]
-
+    def _execute_attack(self, login_func, tasks):
         total = len(tasks)
-
-        if getattr(self.args, "output", None):
-            self.output_manager = OutputManager(
-                self.args.output,
-                getattr(self.args, "output_format", "text"),
-            )
-
-        self._print_header(total)
-
         with Progress(
             SpinnerColumn(style="cyan"),
             TextColumn("[progress.description]{task.description}"),
@@ -95,74 +85,92 @@ class AttackEngine:
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=self.args.threads
             ) as executor:
-                futures = []
-                for task in tasks:
-                    if self._stop_event.is_set():
-                        break
-                    fut = executor.submit(
-                        self._worker, login_func, *task, progress, ptask
-                    )
-                    futures.append(fut)
+                futures = self._submit_tasks(executor, login_func, tasks, progress, ptask)
+                self._wait_for_completion(futures)
 
-                for fut in concurrent.futures.as_completed(futures):
-                    if self._stop_event.is_set():
-                        for pending in futures:
-                            pending.cancel()
-                        break
+    def _submit_tasks(self, executor, login_func, tasks, progress, ptask):
+        futures = []
+        for task in tasks:
+            if self._stop_event.is_set():
+                break
+            fut = executor.submit(
+                self._worker, login_func, *task, progress, ptask
+            )
+            futures.append(fut)
+        return futures
 
+    def _wait_for_completion(self, futures):
+        for _ in concurrent.futures.as_completed(futures):
+            if self._stop_event.is_set():
+                for pending in futures:
+                    pending.cancel()
+                break
+
+    def run(self):
+        login_func = self._resolve_login_func()
+        if not login_func:
+            return
+
+        self.start_time = time.time()
+        tasks = self._build_tasks()
+
+        if getattr(self.args, "output", None):
+            self.output_manager = OutputManager(
+                self.args.output,
+                getattr(self.args, "output_format", "text"),
+            )
+
+        self._print_header(len(tasks))
+        self._execute_attack(login_func, tasks)
         self._generate_report()
+
         if self.output_manager:
             self.output_manager.close()
 
     # ------------------------------------------------------------------
-    def _worker(self, login_func, target, user, password, progress, task_id):
-        if self._stop_event.is_set():
-            progress.update(task_id, advance=1)
-            return
-
-        stop_mode = getattr(self.args, "stop_on_success", "none")
-        skip_key = None
+    @staticmethod
+    def _compute_skip_key(stop_mode, user, target):
         if stop_mode == "user":
-            skip_key = user
-        elif stop_mode == "host":
-            skip_key = (user, target)
+            return user
+        if stop_mode == "host":
+            return (user, target)
+        return None
 
-        if skip_key is not None:
-            with self._skip_lock:
-                if skip_key in self._skipped:
-                    progress.update(task_id, advance=1)
-                    return
+    def _is_skipped(self, skip_key):
+        if skip_key is None:
+            return False
+        with self._skip_lock:
+            return skip_key in self._skipped
 
-        if self.args.delay > 0:
-            time.sleep(self.args.delay)
-
-        retries = getattr(self.args, "retries", 3)
+    def _attempt_with_retries(self, login_func, target, user, password):
+        retries = max(1, getattr(self.args, "retries", 3))
         result = None
-        for attempt in range(max(1, retries)):
+        for attempt in range(retries):
             result = login_func(target, user, password, self.args)
             if result["status"] != "error":
-                break
+                return result
             if attempt < retries - 1:
                 time.sleep(0.5 * (2**attempt))
+        return result
 
-        with self._results_lock:
-            self.results.append(result)
-
+    def _record_success(self, result, stop_mode, skip_key):
         host_port = f"{result['host']}:{result['port']}"
         creds = f"[yellow]{result['user']}[/yellow]:[green]{result['pass']}[/green]"
+        self.logger.info(
+            f"[bold green]  ✓  SUCCESS[/bold green]  {host_port}  {creds}"
+        )
+        if stop_mode == "global":
+            self._stop_event.set()
+        elif skip_key is not None:
+            with self._skip_lock:
+                self._skipped.add(skip_key)
+        if self.output_manager:
+            self.output_manager.write(result)
 
-        if result["status"] == "success":
-            self.logger.info(
-                f"[bold green]  ✓  SUCCESS[/bold green]  {host_port}  {creds}"
-            )
-            if stop_mode == "global":
-                self._stop_event.set()
-            elif skip_key is not None:
-                with self._skip_lock:
-                    self._skipped.add(skip_key)
-            if self.output_manager:
-                self.output_manager.write(result)
-        elif result["status"] == "error":
+    def _log_non_success(self, result):
+        host_port = f"{result['host']}:{result['port']}"
+        if result["status"] == "error":
+            creds = f"[yellow]{result['user']}[/yellow]:[green]{result['pass']}[/green]"
             self.logger.debug(
                 f"[red]  ✗  ERROR  [/red]  {host_port}  {creds}  "
                 f"[dim]→ {result.get('error', '')}[/dim]"
@@ -171,6 +179,31 @@ class AttackEngine:
             self.logger.debug(
                 f"[dim]  ·  FAIL    {host_port}  {result['user']}:{result['pass']}[/dim]"
             )
+
+    def _worker(self, login_func, target, user, password, progress, task_id):
+        if self._stop_event.is_set():
+            progress.update(task_id, advance=1)
+            return
+
+        stop_mode = getattr(self.args, "stop_on_success", "none")
+        skip_key = self._compute_skip_key(stop_mode, user, target)
+
+        if self._is_skipped(skip_key):
+            progress.update(task_id, advance=1)
+            return
+
+        if self.args.delay > 0:
+            time.sleep(self.args.delay)
+
+        result = self._attempt_with_retries(login_func, target, user, password)
+
+        with self._results_lock:
+            self.results.append(result)
+
+        if result["status"] == "success":
+            self._record_success(result, stop_mode, skip_key)
+        else:
+            self._log_non_success(result)
 
         progress.update(task_id, advance=1)
 

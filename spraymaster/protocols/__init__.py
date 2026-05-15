@@ -55,18 +55,18 @@ def _load():
         }
     )
 
-    _try("http", ".http", ["http", "https"])
-    _try("smb", ".smb", ["smb"])
-    _try("mysql", ".mysql", ["mysql"])
-    _try("postgres", ".postgres", ["postgres"])
-    _try("mssql", ".mssql", ["mssql"])
-    _try("ldap", ".ldap", ["ldap", "ldaps"])
-    _try("redis", ".redis_proto", ["redis"])
-    _try("vnc", ".vnc", ["vnc"])
-    _try("snmp", ".snmp", ["snmp"])
+    _try(".http", ["http", "https"])
+    _try(".smb", ["smb"])
+    _try(".mysql", ["mysql"])
+    _try(".postgres", ["postgres"])
+    _try(".mssql", ["mssql"])
+    _try(".ldap", ["ldap", "ldaps"])
+    _try(".redis_proto", ["redis"])
+    _try(".vnc", ["vnc"])
+    _try(".snmp", ["snmp"])
 
 
-def _try(name, relative_module, registry_keys):
+def _try(relative_module, registry_keys):
     # Optional protocol — skip it if its dependency is missing or fails to
     # initialise. We deliberately tolerate any import-time failure here because
     # an unrelated optional protocol must never prevent SprayMaster from

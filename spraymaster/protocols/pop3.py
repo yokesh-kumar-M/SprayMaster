@@ -1,10 +1,10 @@
 import poplib
-import socket
 
 
 def try_login(host, username, password, args):
     use_ssl = getattr(args, "ssl", False) or getattr(args, "protocol", "") == "pop3s"
-    port = args.port if args.port else (995 if use_ssl else 110)
+    default_port = 995 if use_ssl else 110
+    port = args.port if args.port else default_port
     timeout = getattr(args, "timeout", 10)
     result = {
         "status": "fail",
@@ -33,7 +33,7 @@ def try_login(host, username, password, args):
         else:
             result["status"] = "error"
             result["error"] = str(e)
-    except (socket.error, OSError) as e:
+    except OSError as e:
         result["status"] = "error"
         result["error"] = str(e)
     return result

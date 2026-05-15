@@ -223,59 +223,45 @@ def _build_parser(available_protocols):
     return parser
 
 
-def main():
-    console = Console()
-    available = sorted(PROTOCOL_REGISTRY.keys())
+def _load_targets(args):
+    if args.targetlist:
+        return load_list(args.targetlist)
+    if args.target:
+        return [args.target]
+    return []
 
-    _print_banner(console)
 
-    parser = _build_parser(available)
-    args = parser.parse_args()
+def _load_single_or_file(file_path, single_value):
+    if file_path:
+        return load_list(file_path)
+    if single_value:
+        return [single_value]
+    return []
 
-    logging.basicConfig(
-        level="DEBUG" if args.verbose else "INFO",
-        format="%(message)s",
-        datefmt="[%X]",
-        handlers=[
-            RichHandler(
-                console=console, rich_tracebacks=True, show_path=False, markup=True
-            )
-        ],
-    )
-    logger = logging.getLogger("SprayMaster")
 
-    # ---- Load targets ----
-    target_list = (
-        load_list(args.targetlist)
-        if args.targetlist
-        else ([args.target] if args.target else [])
-    )
+def _load_combo(args, logger):
+    try:
+        pairs = load_combo_list(args.combo)
+    except FileNotFoundError:
+        logger.error(f"Combo file not found: [bold]{args.combo}[/bold]")
+        sys.exit(1)
+    if not pairs:
+        logger.error("Combo file is empty or has no valid user:pass lines.")
+        sys.exit(1)
+    users = [u for u, _ in pairs]
+    passwords = [p for _, p in pairs]
+    return users, passwords
 
-    # ---- Load credentials ----
+
+def _load_credentials(args, logger):
     if args.combo:
-        try:
-            pairs = load_combo_list(args.combo)
-        except FileNotFoundError:
-            logger.error(f"Combo file not found: [bold]{args.combo}[/bold]")
-            sys.exit(1)
-        if not pairs:
-            logger.error("Combo file is empty or has no valid user:pass lines.")
-            sys.exit(1)
-        user_list = [u for u, _ in pairs]
-        pass_list = [p for _, p in pairs]
-    else:
-        user_list = (
-            load_list(args.userlist)
-            if args.userlist
-            else ([args.user] if args.user else [])
-        )
-        pass_list = (
-            load_list(args.passlist)
-            if args.passlist
-            else ([args.password] if args.password else [])
-        )
+        return _load_combo(args, logger)
+    users = _load_single_or_file(args.userlist, args.user)
+    passwords = _load_single_or_file(args.passlist, args.password)
+    return users, passwords
 
-    # ---- Validate ----
+
+def _validate_inputs(target_list, user_list, pass_list, has_combo):
     errors = []
     if not target_list:
         errors.append(
@@ -285,17 +271,48 @@ def main():
         errors.append(
             "Specify users:  [cyan]-u USER[/cyan]  or  [cyan]-U FILE[/cyan]  or  [cyan]-C COMBO[/cyan]"
         )
-    if not pass_list and not args.combo:
+    if not pass_list and not has_combo:
         errors.append(
             "Specify passwords:  [cyan]-p PASS[/cyan]  or  [cyan]-P FILE[/cyan]  or  [cyan]-C COMBO[/cyan]"
         )
+    return errors
 
+
+def _configure_logging(console, verbose):
+    log_level = "DEBUG" if verbose else "INFO"
+    logging.basicConfig(
+        level=log_level,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[
+            RichHandler(
+                console=console, rich_tracebacks=True, show_path=False, markup=True
+            )
+        ],
+    )
+    return logging.getLogger("SprayMaster")
+
+
+def main():
+    console = Console()
+    available = sorted(PROTOCOL_REGISTRY.keys())
+
+    _print_banner(console)
+
+    parser = _build_parser(available)
+    args = parser.parse_args()
+
+    logger = _configure_logging(console, args.verbose)
+
+    target_list = _load_targets(args)
+    user_list, pass_list = _load_credentials(args, logger)
+
+    errors = _validate_inputs(target_list, user_list, pass_list, bool(args.combo))
     if errors:
         for msg in errors:
             logger.error(msg)
         sys.exit(1)
 
-    # ---- Run ----
     engine = AttackEngine(args, target_list, user_list, pass_list, console)
     engine.run()
 
