@@ -75,7 +75,7 @@ def _try(relative_module, registry_keys):
 
     try:
         mod = importlib.import_module(relative_module, package=__name__)
-    except (ImportError, ModuleNotFoundError, OSError):
+    except (ImportError, OSError):
         return
     except Exception:  # noqa: BLE001 - optional plugin must not break startup
         return
