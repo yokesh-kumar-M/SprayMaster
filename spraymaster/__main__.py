@@ -1,23 +1,30 @@
 import argparse
 import logging
-import os
+import signal
 import sys
 import warnings
+
+# Force UTF-8 on stdout/stderr so Rich's Unicode glyphs (✓, ✗, →) don't crash
+# under Windows cp1252 when output is piped or redirected. Must happen before
+# we import Console.
+for _stream in (sys.stdout, sys.stderr):
+    reconfigure = getattr(_stream, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
 
 from rich.console import Console
 from rich.logging import RichHandler
 
-# Ensure this package directory is on the path regardless of how the script is invoked
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 warnings.filterwarnings("ignore", category=UserWarning, module="requests")
 warnings.filterwarnings("ignore", message=".*urllib3.*")
 
-from protocols import PROTOCOL_REGISTRY, PROTOCOL_REQUIRES  # noqa: E402
-from core.engine import AttackEngine  # noqa: E402
-from core.utils import load_list, load_combo_list  # noqa: E402
-
-VERSION = "2.0.0"
+from spraymaster import __version__
+from spraymaster.core.engine import AttackEngine
+from spraymaster.core.utils import load_combo_list, load_list
+from spraymaster.protocols import PROTOCOL_REGISTRY, PROTOCOL_REQUIRES
 
 _BANNER = r"""
  ____                       __  __           _
@@ -28,10 +35,10 @@ _BANNER = r"""
       |_|               |___/"""
 
 
-def _print_banner(console: Console):
+def _print_banner(console: Console) -> None:
     console.print(f"[bold cyan]{_BANNER}[/bold cyan]")
     console.print(
-        f"  [bold white]v{VERSION}[/bold white]  "
+        f"  [bold white]v{__version__}[/bold white]  "
         f"[dim]Network Login Auditor[/dim]  "
         f"[dim]|  For authorized penetration testing only[/dim]"
     )
@@ -49,12 +56,51 @@ def _print_banner(console: Console):
     console.print()
 
 
+def _print_protocols(console: Console) -> None:
+    available = sorted(PROTOCOL_REGISTRY.keys())
+    missing = sorted(k for k in PROTOCOL_REQUIRES if k not in PROTOCOL_REGISTRY)
+    console.print("[bold cyan]Available protocols:[/bold cyan]")
+    for p in available:
+        console.print(f"  [green]✓[/green] {p}")
+    if missing:
+        console.print("\n[bold yellow]Unavailable (install extras):[/bold yellow]")
+        for p in missing:
+            dep = PROTOCOL_REQUIRES.get(p, "unknown")
+            console.print(f"  [red]✗[/red] {p}   [dim]→ pip install {dep}[/dim]")
+        console.print(
+            "\n[dim]Or install all extras at once:[/dim] "
+            "[cyan]pip install 'spraymaster[all]'[/cyan]"
+        )
+
+
 def _build_parser(available_protocols):
     parser = argparse.ArgumentParser(
         prog="spraymaster",
-        description="SprayMaster v{} — Network Login Auditor".format(VERSION),
+        description=f"SprayMaster v{__version__} — Network Login Auditor",
         formatter_class=argparse.RawTextHelpFormatter,
         add_help=True,
+    )
+
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"SprayMaster {__version__}"
+    )
+    parser.add_argument(
+        "--list-protocols",
+        dest="list_protocols",
+        action="store_true",
+        help="List supported protocols and exit",
+    )
+    parser.add_argument(
+        "--no-banner",
+        dest="no_banner",
+        action="store_true",
+        help="Suppress the startup banner",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress non-essential output (only show successes and errors)",
     )
 
     t = parser.add_argument_group("Targets")
@@ -253,10 +299,10 @@ def _load_combo(args, logger):
         pairs = load_combo_list(args.combo)
     except FileNotFoundError:
         logger.error(f"Combo file not found: [bold]{args.combo}[/bold]")
-        sys.exit(1)
+        sys.exit(2)
     if not pairs:
         logger.error("Combo file is empty or has no valid user:pass lines.")
-        sys.exit(1)
+        sys.exit(2)
     users = [u for u, _ in pairs]
     passwords = [p for _, p in pairs]
     return users, passwords
@@ -265,8 +311,12 @@ def _load_combo(args, logger):
 def _load_credentials(args, logger):
     if args.combo:
         return _load_combo(args, logger)
-    users = _load_single_or_file(args.userlist, args.user)
-    passwords = _load_single_or_file(args.passlist, args.password)
+    try:
+        users = _load_single_or_file(args.userlist, args.user)
+        passwords = _load_single_or_file(args.passlist, args.password)
+    except FileNotFoundError as e:
+        logger.error(f"Wordlist not found: [bold]{e.filename}[/bold]")
+        sys.exit(2)
     return users, passwords
 
 
@@ -287,8 +337,13 @@ def _validate_inputs(target_list, user_list, pass_list, has_combo):
     return errors
 
 
-def _configure_logging(console, verbose):
-    log_level = "DEBUG" if verbose else "INFO"
+def _configure_logging(console, verbose, quiet):
+    if quiet:
+        log_level = "WARNING"
+    elif verbose:
+        log_level = "DEBUG"
+    else:
+        log_level = "INFO"
     logging.basicConfig(
         level=log_level,
         format="%(message)s",
@@ -302,16 +357,34 @@ def _configure_logging(console, verbose):
     return logging.getLogger("SprayMaster")
 
 
-def main():
-    console = Console()
+def _install_sigint_handler(console: Console) -> None:
+    def _handler(signum, frame):
+        console.print("\n[bold yellow]  ⚠  Interrupt received — shutting down...[/bold yellow]")
+        sys.exit(130)
+
+    signal.signal(signal.SIGINT, _handler)
+
+
+def main() -> int:
+    # When stdout is piped to a tool that closes the pipe early (`| head`),
+    # Rich's Windows renderer raises OSError(22). Force the modern renderer
+    # when not attached to a real terminal so output is plain UTF-8 text.
+    is_tty = sys.stdout.isatty()
+    console = Console(legacy_windows=False if not is_tty else None, force_terminal=is_tty or None)
+    _install_sigint_handler(console)
+
     available = sorted(PROTOCOL_REGISTRY.keys())
-
-    _print_banner(console)
-
     parser = _build_parser(available)
     args = parser.parse_args()
 
-    logger = _configure_logging(console, args.verbose)
+    if args.list_protocols:
+        _print_protocols(console)
+        return 0
+
+    if not args.no_banner and not args.quiet:
+        _print_banner(console)
+
+    logger = _configure_logging(console, args.verbose, args.quiet)
 
     target_list = _load_targets(args)
     user_list, pass_list = _load_credentials(args, logger)
@@ -320,11 +393,27 @@ def main():
     if errors:
         for msg in errors:
             logger.error(msg)
-        sys.exit(1)
+        return 2
 
     engine = AttackEngine(args, target_list, user_list, pass_list, console)
     engine.run()
+    successes = [r for r in engine.results if r["status"] == "success"]
+    return 0 if successes else 1
+
+
+def _entrypoint() -> int:
+    try:
+        return main()
+    except BrokenPipeError:
+        # Downstream consumer (e.g. `| head`) closed the pipe. Exit cleanly.
+        try:
+            sys.stdout.close()
+        except OSError:
+            pass
+        return 0
+    except KeyboardInterrupt:
+        return 130
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(_entrypoint())

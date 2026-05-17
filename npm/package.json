@@ -1,0 +1,45 @@
+{
+  "name": "spraymaster",
+  "version": "2.1.0",
+  "description": "Multi-protocol network login auditor and password spraying tool (npm wrapper around the Python CLI).",
+  "keywords": [
+    "security",
+    "pentest",
+    "password-spraying",
+    "brute-force",
+    "network-auditor",
+    "hydra",
+    "infosec",
+    "cli"
+  ],
+  "homepage": "https://github.com/yokesh-kumar-M/SprayMaster",
+  "bugs": {
+    "url": "https://github.com/yokesh-kumar-M/SprayMaster/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yokesh-kumar-M/SprayMaster.git"
+  },
+  "license": "MIT",
+  "author": "Yokesh Kumar M",
+  "bin": {
+    "spraymaster": "bin/spraymaster.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js || true"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ]
+}

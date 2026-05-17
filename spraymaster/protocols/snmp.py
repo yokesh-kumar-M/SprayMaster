@@ -1,11 +1,11 @@
 from pysnmp.hlapi import (
-    getCmd,
-    SnmpEngine,
     CommunityData,
-    UdpTransportTarget,
     ContextData,
-    ObjectType,
     ObjectIdentity,
+    ObjectType,
+    SnmpEngine,
+    UdpTransportTarget,
+    getCmd,
 )
 
 

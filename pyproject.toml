@@ -1,0 +1,130 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spraymaster"
+version = "2.1.0"
+description = "Multi-protocol concurrent network login auditor and password spraying tool for authorized penetration testing."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Yokesh Kumar M" }]
+keywords = [
+    "security",
+    "pentest",
+    "password-spraying",
+    "brute-force",
+    "network-auditor",
+    "hydra",
+    "infosec",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: System :: Networking",
+]
+dependencies = [
+    "rich>=13.0",
+    "paramiko>=3.0",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+mysql    = ["pymysql>=1.0"]
+postgres = ["psycopg2-binary>=2.9"]
+mssql    = ["pymssql>=2.2"]
+ldap     = ["ldap3>=2.9"]
+redis    = ["redis>=4.0"]
+smb      = ["impacket>=0.11"]
+vnc      = ["pycryptodome>=3.18"]
+snmp     = ["pysnmp>=4.4"]
+socks    = ["requests[socks]>=2.28"]
+all = [
+    "pymysql>=1.0",
+    "psycopg2-binary>=2.9",
+    "pymssql>=2.2",
+    "ldap3>=2.9",
+    "redis>=4.0",
+    "impacket>=0.11",
+    "pycryptodome>=3.18",
+    "pysnmp>=4.4",
+    "requests[socks]>=2.28",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "build>=1.0",
+    "twine>=4.0",
+]
+
+[project.urls]
+Homepage      = "https://github.com/yokesh-kumar-M/SprayMaster"
+Repository    = "https://github.com/yokesh-kumar-M/SprayMaster"
+Issues        = "https://github.com/yokesh-kumar-M/SprayMaster/issues"
+Changelog     = "https://github.com/yokesh-kumar-M/SprayMaster/blob/main/CHANGELOG.md"
+
+[project.scripts]
+spraymaster = "spraymaster.__main__:_entrypoint"
+
+[tool.setuptools.packages.find]
+include = ["spraymaster*"]
+exclude = ["tests*", "venv*", "npm*"]
+
+[tool.setuptools.package-data]
+spraymaster = ["py.typed"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.coverage.run]
+source = ["spraymaster"]
+omit = ["spraymaster/__main__.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "RUF"]
+ignore = [
+    "S101",  # asserts allowed (tests)
+    "S104",  # binding to all interfaces — not relevant here
+    "S105",  # hardcoded password strings appear in tests/wordlists
+    "S106",
+    "S311",  # std random is fine for our use cases
+    "S603",  # subprocess: we control all inputs
+    "S607",  # subprocess: partial path is fine
+    "E501",  # line length handled by formatter
+    # The following bandit rules flag things this tool is INTENTIONALLY built to do:
+    "S304",  # insecure cipher (DES) — required by the VNC/RFB protocol
+    "S305",  # ECB mode — also required by VNC/RFB
+    "S321",  # FTP-related calls — we ARE an FTP client
+    "S507",  # paramiko AutoAddPolicy — auditing unknown hosts is the use case
+    "S508",  # SNMPv1/v2 — auditing legacy SNMP servers is the use case
+    "RUF012", # class-level lists treated as constants are fine for OutputManager._FIELDS
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "E501"]
+# __main__.py reconfigures stdout/stderr for UTF-8 BEFORE importing Rich;
+# E402 (imports-not-at-top) is required by design, not a mistake.
+"spraymaster/__main__.py" = ["E402"]

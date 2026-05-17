@@ -1,9 +1,11 @@
 import redis as redis_lib
 from redis.exceptions import (
     AuthenticationError,
-    ConnectionError as RedisConnError,
     RedisError,
     ResponseError,
+)
+from redis.exceptions import (
+    ConnectionError as RedisConnError,
 )
 
 

@@ -1,5 +1,5 @@
-from ldap3 import Server, Connection, SIMPLE, AUTO_BIND_NO_TLS
-from ldap3.core.exceptions import LDAPBindError, LDAPSocketOpenError, LDAPException
+from ldap3 import AUTO_BIND_NO_TLS, SIMPLE, Connection, Server
+from ldap3.core.exceptions import LDAPBindError, LDAPException, LDAPSocketOpenError
 
 
 def try_login(host, username, password, args):

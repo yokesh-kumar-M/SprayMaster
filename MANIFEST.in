@@ -1,0 +1,12 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include pyproject.toml
+recursive-include spraymaster *.py py.typed
+global-exclude __pycache__
+global-exclude *.py[cod]
+prune tests
+prune venv
+prune npm
+prune dist
+prune build

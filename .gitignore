@@ -8,6 +8,16 @@ __pycache__/
 dist/
 build/
 .eggs/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node (npm wrapper)
+npm/node_modules/
+
+# PyInstaller
+*.spec.bak
 
 # Virtual environment
 venv/

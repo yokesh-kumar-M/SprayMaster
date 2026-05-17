@@ -38,7 +38,7 @@ PROTOCOL_REQUIRES = {
 
 
 def _load():
-    from . import ftp, ssh, telnet, smtp, pop3, imap
+    from . import ftp, imap, pop3, smtp, ssh, telnet
 
     PROTOCOL_REGISTRY.update(
         {
@@ -77,7 +77,7 @@ def _try(relative_module, registry_keys):
         mod = importlib.import_module(relative_module, package=__name__)
     except (ImportError, OSError):
         return
-    except Exception:  # noqa: BLE001 - optional plugin must not break startup
+    except Exception:
         return
 
     for key in registry_keys:

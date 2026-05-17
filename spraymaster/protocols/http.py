@@ -1,6 +1,7 @@
 import json as _json
-import urllib3
+
 import requests
+import urllib3
 from requests.auth import HTTPBasicAuth
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -74,7 +75,7 @@ def try_login(host, username, password, args):
     request_kwargs = {
         "headers": headers,
         "timeout": timeout,
-        "verify": verify_ssl,  # noqa: S501 - configurable; see comment above
+        "verify": verify_ssl,
         "proxies": proxies,
         "allow_redirects": True,
     }
@@ -93,7 +94,7 @@ def try_login(host, username, password, args):
                 auth=HTTPBasicAuth(username, password),
                 headers=headers,
                 timeout=timeout,
-                verify=verify_ssl,  # noqa: S501 - configurable; see comment above
+                verify=verify_ssl,
                 proxies=proxies,
             )
             result["status"] = "success" if resp.status_code == 200 else "fail"

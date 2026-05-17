@@ -8,7 +8,7 @@ import struct
 # an application choice, and the secret transmitted is a one-shot 16-byte
 # server challenge — not user data. Static analyzers should treat the following
 # imports and Cipher calls as protocol-required and not as a vulnerability.
-from Crypto.Cipher import DES  # noqa: S413  # nosec B413  # NOSONAR - required by VNC RFB protocol
+from Crypto.Cipher import DES  # nosec B413  # NOSONAR - required by VNC RFB protocol
 
 
 def _reverse_bits(byte):
@@ -25,7 +25,7 @@ def _make_des_key(password):
 def _vnc_encrypt(challenge, password):
     key = _make_des_key(password)
     # DES-ECB is the cipher mandated by RFB §7.2.2. See module docstring above.
-    cipher = DES.new(key, DES.MODE_ECB)  # noqa: S305  # nosec B305  # NOSONAR - protocol-mandated by RFB §7.2.2
+    cipher = DES.new(key, DES.MODE_ECB)  # nosec B305  # NOSONAR - protocol-mandated by RFB §7.2.2
     return cipher.encrypt(challenge[:8]) + cipher.encrypt(challenge[8:])
 
 

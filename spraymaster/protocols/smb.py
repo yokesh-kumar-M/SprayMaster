@@ -1,5 +1,4 @@
-from impacket.smbconnection import SMBConnection, SessionError
-
+from impacket.smbconnection import SessionError, SMBConnection
 
 _AUTH_FAILURE_MARKERS = (
     "status_logon_failure",
@@ -43,7 +42,7 @@ def try_login(host, username, password, args):
             result["error"] = str(e)
         else:
             result["status"] = "fail"
-    except Exception as e:  # noqa: BLE001  # impacket raises a wide set of typed exceptions
+    except Exception as e:  # impacket raises a wide set of typed exceptions
         err = str(e).lower()
         if any(x in err for x in _AUTH_FAILURE_MARKERS):
             result["status"] = "fail"

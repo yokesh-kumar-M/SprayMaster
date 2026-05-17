@@ -1,21 +1,21 @@
 import concurrent.futures
 import logging
-import time
 import threading
+import time
 
 from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
     TaskProgressColumn,
+    TextColumn,
     TimeElapsedColumn,
-    MofNCompleteColumn,
 )
 from rich.table import Table
 
-from protocols import PROTOCOL_REGISTRY, PROTOCOL_REQUIRES
-from core.output import OutputManager
+from spraymaster.core.output import OutputManager
+from spraymaster.protocols import PROTOCOL_REGISTRY, PROTOCOL_REQUIRES
 
 
 class AttackEngine:
