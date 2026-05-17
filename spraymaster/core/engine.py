@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import concurrent.futures
 import logging
 import threading
 import time
 from collections.abc import Iterable, Iterator
-from typing import Callable, Optional
+from typing import Callable
 
 from rich.progress import (
     BarColumn,
@@ -38,7 +40,7 @@ class AttackEngine:
         users,
         passwords,
         console,
-        on_event: Optional[EventCallback] = None,
+        on_event: EventCallback | None = None,
     ):
         self.args = args
         self.targets = targets
