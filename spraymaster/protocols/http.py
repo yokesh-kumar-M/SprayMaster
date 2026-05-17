@@ -53,6 +53,11 @@ def try_login(host, username, password, args):
     headers = _parse_headers(getattr(args, "http_headers", None))
     proxy_url = getattr(args, "proxy", None)
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    # SECURITY: TLS verification defaults to disabled because this tool is used
+    # against authorized targets that commonly present self-signed / expired
+    # certificates (lab environments, internal infra). Pass --verify-ssl to
+    # enforce verification when auditing public-facing services.
+    verify_ssl = getattr(args, "verify_ssl", False)
 
     scheme = "https" if use_ssl else "http"
     url = f"{scheme}://{host}:{port}{path}"
@@ -69,7 +74,7 @@ def try_login(host, username, password, args):
     request_kwargs = {
         "headers": headers,
         "timeout": timeout,
-        "verify": False,
+        "verify": verify_ssl,  # noqa: S501 - configurable; see comment above
         "proxies": proxies,
         "allow_redirects": True,
     }
@@ -88,7 +93,7 @@ def try_login(host, username, password, args):
                 auth=HTTPBasicAuth(username, password),
                 headers=headers,
                 timeout=timeout,
-                verify=False,
+                verify=verify_ssl,  # noqa: S501 - configurable; see comment above
                 proxies=proxies,
             )
             result["status"] = "success" if resp.status_code == 200 else "fail"

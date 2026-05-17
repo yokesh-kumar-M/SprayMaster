@@ -187,6 +187,15 @@ def _build_parser(available_protocols):
         help="Extra request headers as a JSON object\n"
         'Example: \'{"X-Forwarded-For": "1.2.3.4"}\'',
     )
+    http.add_argument(
+        "--verify-ssl",
+        dest="verify_ssl",
+        action="store_true",
+        help=(
+            "Enforce TLS certificate verification on HTTPS requests.\n"
+            "Default OFF — pen-test targets often present self-signed certs."
+        ),
+    )
 
     net = parser.add_argument_group("Network")
     net.add_argument(
