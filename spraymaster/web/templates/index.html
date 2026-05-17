@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}SprayMaster — New attack{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>New attack</h2>
+  <form method="post" action="/attacks" class="grid-form">
+    <label>Protocol
+      <select name="protocol" required>
+        {% for p in protocols %}<option value="{{ p }}" {% if p == "ssh" %}selected{% endif %}>{{ p }}</option>{% endfor %}
+      </select>
+    </label>
+
+    <label class="span-2">
+      Targets <span class="muted small">(comma/newline separated, or a path to a file)</span>
+      <textarea name="targets" rows="2" placeholder="10.0.0.1, 10.0.0.2"></textarea>
+    </label>
+
+    <label>Users <span class="muted small">(or file path)</span>
+      <textarea name="users" rows="2" placeholder="admin, root"></textarea>
+    </label>
+
+    <label>Passwords <span class="muted small">(or file path)</span>
+      <textarea name="passwords" rows="2" placeholder="Summer2024!, hunter2"></textarea>
+    </label>
+
+    <label class="span-2">Combo file <span class="muted small">(optional — overrides users/passwords if set)</span>
+      <input type="text" name="combo" placeholder="/path/to/combos.txt">
+    </label>
+
+    <label>Threads<input type="number" name="threads" value="16" min="1" max="512"></label>
+    <label>Timeout (s)<input type="number" name="timeout" value="10" min="1"></label>
+    <label>Retries<input type="number" name="retries" value="3" min="1"></label>
+    <label>Port <span class="muted small">(blank = default)</span><input type="number" name="port"></label>
+
+    <label>Stop on success
+      <select name="stop_on_success">
+        <option value="none">none</option>
+        <option value="user">user</option>
+        <option value="host">host</option>
+        <option value="global">global</option>
+      </select>
+    </label>
+    <label class="checkbox"><input type="checkbox" name="spray" value="1"> Password spray mode</label>
+    <label class="checkbox"><input type="checkbox" name="ssl" value="1"> SSL/TLS</label>
+
+    <fieldset class="span-2">
+      <legend>HTTP form options <span class="muted small">(only used when protocol is http/https)</span></legend>
+      <label>Path<input type="text" name="http_path" value="/"></label>
+      <label>Form data <span class="muted small">use ^USER^ / ^PASS^</span>
+        <input type="text" name="http_form_data" placeholder="username=^USER^&password=^PASS^">
+      </label>
+      <label>Fail string<input type="text" name="http_fail_string" placeholder="Invalid credentials"></label>
+    </fieldset>
+
+    <div class="actions span-2">
+      <button type="submit" class="primary">Start attack</button>
+      <a class="button-link" href="/history">View history</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

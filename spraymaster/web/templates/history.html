@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}SprayMaster — History{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Attack history</h2>
+  {% if not runs %}
+    <p class="muted">No attacks yet. <a href="/">Start one.</a></p>
+  {% else %}
+    <table class="grid">
+      <thead>
+        <tr><th>#</th><th>Started</th><th>Protocol</th><th>Status</th><th>Found</th><th>Attempts</th><th>Targets</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+          <tr>
+            <td><a href="/attacks/{{ r.id }}">#{{ r.id }}</a></td>
+            <td>{{ r.started_at|int }}</td>
+            <td>{{ r.protocol }}</td>
+            <td>{{ r.status }}</td>
+            <td class="success"><b>{{ r.success_count }}</b></td>
+            <td>{{ r.total_attempts or 0 }}</td>
+            <td>{{ r.target_count }}</td>
+            <td>
+              <form method="post" action="/history/{{ r.id }}/delete" onsubmit="return confirm('Delete run #{{ r.id }}?')">
+                <button class="link danger" type="submit">delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,84 @@
+/* SprayMaster web UI — minimal dark theme */
+:root {
+  --bg: #0f1115;
+  --bg-card: #161922;
+  --bg-input: #1f2330;
+  --fg: #e6e7eb;
+  --muted: #8a90a0;
+  --accent: #4cc2ff;
+  --accent-strong: #2fa4e7;
+  --success: #4ade80;
+  --error: #f87171;
+  --border: #2a2f3a;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; }
+
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background: #0a0c10; border-bottom: 1px solid var(--border); }
+.brand { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 1.1rem; }
+.muted, .muted * { color: var(--muted); }
+.small { font-size: 0.85em; }
+.error { color: var(--error); }
+.success { color: var(--success); }
+
+nav { display: flex; gap: 1rem; align-items: center; }
+nav a, nav button { color: var(--fg); text-decoration: none; background: none; border: none; cursor: pointer; padding: 0.25rem 0.5rem; }
+nav a:hover, nav button:hover { color: var(--accent); }
+.inline { display: inline; }
+.link { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; }
+
+main { max-width: 1100px; margin: 1.5rem auto; padding: 0 1.5rem; }
+
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+h2 { margin-top: 0; }
+
+input, select, textarea, button {
+  font: inherit;
+  background: var(--bg-input);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem;
+  width: 100%;
+}
+button { cursor: pointer; background: var(--accent-strong); border-color: var(--accent-strong); color: white; font-weight: 600; padding: 0.5rem 1rem; width: auto; }
+button:hover { background: var(--accent); }
+button.danger, .danger { background: #b03a3a; border-color: #b03a3a; }
+button.danger:hover { background: var(--error); }
+.button-link { display: inline-block; padding: 0.5rem 1rem; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--fg); text-decoration: none; }
+
+label { display: block; margin-bottom: 0.5rem; color: var(--muted); }
+label input, label select, label textarea { margin-top: 0.25rem; }
+label.checkbox { display: flex; align-items: center; gap: 0.5rem; color: var(--fg); }
+label.checkbox input { width: auto; }
+
+.grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.grid-form .span-2 { grid-column: span 2; }
+.grid-form fieldset { border: 1px solid var(--border); border-radius: 4px; padding: 1rem; }
+.grid-form fieldset legend { padding: 0 0.5rem; color: var(--muted); }
+.actions { display: flex; gap: 1rem; align-items: center; }
+
+.run-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.progress { margin: 1rem 0; }
+.progress-bar { height: 12px; background: var(--accent-strong); border-radius: 6px; width: 0%; transition: width 0.2s; }
+.progress-meta { display: flex; gap: 1.5rem; margin-top: 0.5rem; color: var(--muted); }
+
+.grid { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+.grid th, .grid td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+.grid th { color: var(--muted); font-weight: 500; }
+
+.log { background: #05070a; border: 1px solid var(--border); border-radius: 4px; padding: 1rem; height: 280px; overflow-y: auto; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px; white-space: pre-wrap; }
+.log .success { color: var(--success); }
+.log .error { color: var(--error); }
+.log .muted { color: var(--muted); }
+
+footer { max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; }
+
+/* login */
+.login-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.login-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; width: 360px; }
+.login-card h1 { margin: 0 0 0.5rem; color: var(--accent); }
+.login-card form { margin-top: 1rem; }
+.login-card button { width: 100%; margin-top: 1rem; }

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}SprayMaster — Run #{{ run.id }}{% endblock %}
+{% block content %}
+<section class="card">
+  <header class="run-header">
+    <div>
+      <h2>Attack #{{ run.id }} — {{ run.protocol|upper }}</h2>
+      <p class="muted">
+        targets={{ run.target_count }} · users={{ run.user_count }} · pass={{ run.password_count }}
+        · status=<b id="run-status">{{ run.status }}</b>
+      </p>
+    </div>
+    {% if active %}
+      <form method="post" action="/attacks/{{ run.id }}/stop">
+        <button type="submit" class="danger">Stop attack</button>
+      </form>
+    {% endif %}
+  </header>
+
+  <div class="progress">
+    <div id="progress-bar" class="progress-bar"></div>
+    <div class="progress-meta">
+      <span>Attempts: <b id="cnt-attempts">0</b></span>
+      <span class="success">Successes: <b id="cnt-success">{{ run.success_count }}</b></span>
+      <span class="error">Errors: <b id="cnt-error">{{ run.error_count }}</b></span>
+    </div>
+  </div>
+
+  <h3>Findings</h3>
+  <table class="grid" id="findings-table">
+    <thead><tr><th>Host</th><th>Port</th><th>User</th><th>Password</th><th>Protocol</th></tr></thead>
+    <tbody id="findings-body">
+      {% for f in findings %}
+        <tr><td>{{ f.host }}</td><td>{{ f.port }}</td><td>{{ f.username }}</td><td>{{ f.password }}</td><td>{{ f.protocol }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>Live log</h3>
+  <pre id="log" class="log"></pre>
+</section>
+
+<script>
+(function () {
+  const runId = {{ run.id }};
+  const wsProto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${wsProto}://${location.host}/ws/attacks/${runId}`);
+  const log = document.getElementById("log");
+  const bar = document.getElementById("progress-bar");
+  const cntAttempts = document.getElementById("cnt-attempts");
+  const cntSuccess = document.getElementById("cnt-success");
+  const cntError   = document.getElementById("cnt-error");
+  const findings   = document.getElementById("findings-body");
+  const status     = document.getElementById("run-status");
+
+  let total = 0, done = 0, ok = 0, err = 0;
+
+  function append(line, cls) {
+    const span = document.createElement("span");
+    span.textContent = line + "\n";
+    if (cls) span.className = cls;
+    log.appendChild(span);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  ws.onopen = () => append("[ws] connected", "muted");
+  ws.onclose = () => append("[ws] disconnected", "muted");
+  ws.onerror = (e) => append("[ws] error", "error");
+
+  ws.onmessage = (ev) => {
+    const e = JSON.parse(ev.data);
+    if (e.type === "ping") return;
+    if (e.type === "not_active") {
+      append("This run has already finished. Reload to see final state.", "muted");
+      return;
+    }
+    if (e.type === "attack_start") {
+      total = e.total;
+      append(`▶ ${e.protocol} attack started — ${e.total} attempts queued`, "muted");
+      return;
+    }
+    if (e.type === "attempt") {
+      done++;
+      cntAttempts.textContent = done;
+      if (total > 0) bar.style.width = ((done / total) * 100).toFixed(1) + "%";
+      return;
+    }
+    if (e.type === "success") {
+      ok++;
+      cntSuccess.textContent = ok;
+      append(`✓ SUCCESS  ${e.host}:${e.port}  ${e.user}:${e.pass}`, "success");
+      const row = document.createElement("tr");
+      row.innerHTML = `<td>${e.host}</td><td>${e.port}</td><td>${e.user}</td><td>${e.pass}</td><td>${e.protocol}</td>`;
+      findings.appendChild(row);
+      return;
+    }
+    if (e.type === "error") {
+      err++;
+      cntError.textContent = err;
+      if (err <= 50) append(`✗ ${e.host}:${e.port}  ${e.user}  — ${(e.error||"").slice(0,80)}`, "error");
+      return;
+    }
+    if (e.type === "attack_done") {
+      status.textContent = "done";
+      append(`■ Attack finished — ${e.successes} valid / ${e.total} attempts in ${e.duration.toFixed(1)}s`, "muted");
+      ws.close();
+    }
+  };
+})();
+</script>
+{% endblock %}

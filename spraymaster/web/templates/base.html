@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SprayMaster{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">SprayMaster <span class="muted">v{{ spraymaster_version }}</span></a>
+    <nav>
+      <a href="/">New attack</a>
+      <a href="/history">History</a>
+      <form action="/logout" method="post" class="inline">
+        <button class="link" type="submit">Logout</button>
+      </form>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <p class="muted">Authorized pentesting only — see LICENSE for usage terms.</p>
+  </footer>
+</body>
+</html>

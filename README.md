@@ -25,6 +25,8 @@ A highly concurrent, multi-protocol network login auditor and password-spraying 
 - **HTTP/HTTPS form attacks** — `^USER^` / `^PASS^` placeholders, fail/success matching, custom headers, proxy
 - **Real-time reporting** — Rich-rendered progress + live success banners
 - **Export formats** — plain text, JSONL, CSV
+- **Three front-ends** — `spraymaster` (CLI), `spraymaster-tui` (Textual TUI), `spraymaster-web` (FastAPI + HTMX)
+- **Persistent history** — SQLite-backed history of every run and finding, queryable from TUI and Web
 - **Production-ready packaging** — installable from PyPI, npm, Docker, or as a standalone binary
 
 ---
@@ -37,8 +39,12 @@ Pick whichever fits your stack. They're all the same tool under the hood.
 
 ```bash
 pipx install spraymaster          # base CLI (10 protocols)
-pipx install 'spraymaster[all]'   # all optional protocol extras
+pipx install 'spraymaster[all]'   # CLI + TUI + Web + all protocols
+pipx install 'spraymaster[tui]'   # CLI + Terminal UI
+pipx install 'spraymaster[web]'   # CLI + Web UI
 spraymaster --help
+spraymaster-tui                   # interactive full-screen TUI
+spraymaster-web --port 8000       # browser dashboard at http://127.0.0.1:8000
 ```
 
 ### 2. pip
@@ -49,7 +55,10 @@ pip install spraymaster
 # or everything:   pip install 'spraymaster[all]'
 ```
 
-Optional extras you can mix-and-match: `mysql`, `postgres`, `mssql`, `ldap`, `redis`, `smb`, `vnc`, `snmp`, `socks`, `all`.
+Optional extras you can mix-and-match:
+- Protocols: `mysql`, `postgres`, `mssql`, `ldap`, `redis`, `smb`, `vnc`, `snmp`, `socks`
+- UIs: `tui` (Textual), `web` (FastAPI + HTMX)
+- Catch-all: `all` (all protocols + TUI + Web)
 
 ### 3. npm (Node.js wrapper)
 
@@ -90,7 +99,54 @@ spraymaster --version
 
 ---
 
-## Quick start
+## Three ways to use it
+
+| Front-end | Best for | Launch |
+|-----------|----------|--------|
+| **CLI** (`spraymaster`)   | Scripting, CI pipelines, one-off runs | `spraymaster --protocol ssh ...` |
+| **TUI** (`spraymaster-tui`)   | SSH sessions, fast solo pentest work, no browser needed | `spraymaster-tui` |
+| **Web** (`spraymaster-web`)   | Team self-hosted dashboard, browsable history, multi-watcher | `spraymaster-web --port 8000` |
+
+All three drive the same `AttackEngine`. The Web and TUI persist every run to
+`~/.spraymaster/history.db` (override with `$SPRAYMASTER_DB`); the CLI is
+stateless by default but can write findings to `-o FILE`.
+
+### TUI quick start
+
+```bash
+spraymaster-tui
+```
+
+Fill the form, press **Ctrl+R** to run, **Ctrl+H** for history, **q** to quit.
+Use `,`-separated values or a file path in any of the targets/users/passwords
+fields.
+
+### Web UI quick start
+
+```bash
+# Set a strong token (or let the server generate one and print it to stderr)
+export SPRAYMASTER_AUTH_TOKEN="$(openssl rand -hex 32)"
+spraymaster-web --port 8000
+
+# Open http://127.0.0.1:8000  →  enter the token  →  configure  →  Start attack
+```
+
+The web server binds to **127.0.0.1 only** by default. To expose it on a LAN/VPN
+you must explicitly pass `--allow-public --host 0.0.0.0`. The auth model is a
+single bearer token — it is not safe to put on the open internet without a
+front-door (VPN, SSH tunnel, reverse proxy with mTLS).
+
+#### JSON API
+
+```bash
+# Bearer token works in header for scripted access
+curl -H "Authorization: Bearer $SPRAYMASTER_AUTH_TOKEN" \
+     http://127.0.0.1:8000/api/runs
+curl -H "Authorization: Bearer $SPRAYMASTER_AUTH_TOKEN" \
+     http://127.0.0.1:8000/api/runs/1/findings
+```
+
+## CLI quick start
 
 ```bash
 # List loaded protocols and any missing extras
@@ -206,20 +262,49 @@ PyPI uses [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) — co
 spraymaster/
 ├── __main__.py            CLI entrypoint (argparse + Rich)
 ├── core/
-│   ├── engine.py          AttackEngine — threading, stop strategies, progress
+│   ├── engine.py          AttackEngine — threading, stop strategies, on_event hook
 │   ├── output.py          Real-time writers (text / jsonl / csv)
 │   └── utils.py           Wordlist + combo loaders
-└── protocols/
-    ├── __init__.py        Plugin registry — gracefully handles missing deps
-    ├── ssh.py, ftp.py, … 15 protocol handlers, each exposing `try_login()`
-    └── …
+├── protocols/
+│   ├── __init__.py        Plugin registry — gracefully handles missing deps
+│   └── ssh.py, ftp.py, … 15 protocol handlers, each exposing `try_login()`
+├── storage/
+│   └── history.py         SQLite-backed run + finding history
+├── tui/                   Textual TUI
+│   ├── app.py             Three screens: Config / Run / History
+│   └── runner.py          Adapter: AttackEngine in a background thread
+└── web/                   FastAPI + HTMX web UI
+    ├── app.py             Routes (HTML pages + JSON API + WebSocket)
+    ├── auth.py            Single-token auth (cookie / header / ?token=)
+    ├── runs.py            Active-run registry, worker-thread → asyncio bridge
+    ├── cli.py             `spraymaster-web` entry point
+    ├── templates/         Jinja templates (base, login, index, attack, history)
+    └── static/            CSS + assets
 
-tests/                     pytest suite (offline — no network)
+tests/                     pytest suite (offline — 46 tests, no network)
 packaging/spraymaster.spec PyInstaller spec for single-file binaries
 npm/                       Node wrapper package
 Dockerfile                 Multi-stage, all extras included
 .github/workflows/         CI + release pipelines
 ```
+
+### Engine event hook (for integrations)
+
+```python
+from spraymaster.core.engine import AttackEngine
+
+def my_observer(event):
+    # event["type"] in {attack_start, attempt, success, error, attack_done}
+    print(event)
+
+engine = AttackEngine(args, targets, users, passwords, console, on_event=my_observer)
+engine.run()
+engine.request_stop()  # external stop from another thread
+```
+
+Both the TUI and Web UI consume the engine through this hook — no special async
+or framework wiring. Build your own integration (Slack notifier, webhook
+forwarder, custom dashboard) by subscribing the same way.
 
 Adding a new protocol: drop a module under `spraymaster/protocols/` exposing `try_login(host, username, password, args)` that returns `{"status": "success"/"fail"/"error", "host", "port", "user", "pass", "protocol", "error"}`. Register it in `protocols/__init__.py`. Tests in `tests/test_protocols.py` will pick it up automatically.
 
@@ -229,9 +314,8 @@ Adding a new protocol: drop a module under `spraymaster/protocols/` exposing `tr
 
 - [x] v2.0 — multi-protocol concurrent core
 - [x] v2.1 — packaging, PyPI/npm/Docker/binary distribution, CI/CD
-- [ ] v2.2 — **Web UI** (FastAPI + React/Vue) for browser-based attack runs and history
-- [ ] v2.2 — **Terminal UI** (Textual) for full-screen interactive mode over SSH
-- [ ] v2.3 — Resume support, persistent attack history, REST API for automation
+- [x] v2.2 — Web UI (FastAPI + HTMX), Terminal UI (Textual), SQLite history, JSON API
+- [ ] v2.3 — Resume in-flight attacks, scheduled runs, multi-user auth (RBAC), Slack/webhook notifiers
 
 ---
 

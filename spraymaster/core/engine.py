@@ -2,6 +2,7 @@ import concurrent.futures
 import logging
 import threading
 import time
+from typing import Callable, Optional
 
 from rich.progress import (
     BarColumn,
@@ -17,9 +18,26 @@ from rich.table import Table
 from spraymaster.core.output import OutputManager
 from spraymaster.protocols import PROTOCOL_REGISTRY, PROTOCOL_REQUIRES
 
+# Engine event types — stable contract for TUI / Web observers.
+EVENT_ATTACK_START = "attack_start"
+EVENT_ATTEMPT = "attempt"
+EVENT_SUCCESS = "success"
+EVENT_ERROR = "error"
+EVENT_ATTACK_DONE = "attack_done"
+
+EventCallback = Callable[[dict], None]
+
 
 class AttackEngine:
-    def __init__(self, args, targets, users, passwords, console):
+    def __init__(
+        self,
+        args,
+        targets,
+        users,
+        passwords,
+        console,
+        on_event: Optional[EventCallback] = None,
+    ):
         self.args = args
         self.targets = targets
         self.users = users
@@ -33,6 +51,19 @@ class AttackEngine:
         self._skip_lock = threading.Lock()
         self.start_time = None
         self.output_manager = None
+        self._on_event = on_event
+
+    def request_stop(self) -> None:
+        """External stop signal — observers can halt an in-flight attack."""
+        self._stop_event.set()
+
+    def _emit(self, event_type: str, **payload) -> None:
+        if self._on_event is None:
+            return
+        try:
+            self._on_event({"type": event_type, **payload})
+        except Exception:
+            self.logger.debug("on_event observer raised; ignoring", exc_info=True)
 
     # ------------------------------------------------------------------
     def _build_tasks(self):
@@ -120,9 +151,34 @@ class AttackEngine:
                 getattr(self.args, "output_format", "text"),
             )
 
+        self._emit(
+            EVENT_ATTACK_START,
+            protocol=self.args.protocol,
+            total=len(tasks),
+            targets=len(self.targets),
+            users=len(self.users),
+            passwords=len(self.passwords),
+            threads=self.args.threads,
+            spray=bool(self.args.spray),
+            combo=bool(getattr(self.args, "combo", None)),
+            stop_on_success=getattr(self.args, "stop_on_success", "none"),
+        )
+
         self._print_header(len(tasks))
         self._execute_attack(login_func, tasks)
         self._generate_report()
+
+        duration = time.time() - self.start_time
+        successes = [r for r in self.results if r["status"] == "success"]
+        errors = [r for r in self.results if r["status"] == "error"]
+        self._emit(
+            EVENT_ATTACK_DONE,
+            duration=duration,
+            total=len(self.results),
+            successes=len(successes),
+            errors=len(errors),
+            findings=successes,
+        )
 
         if self.output_manager:
             self.output_manager.close()
@@ -166,6 +222,7 @@ class AttackEngine:
                 self._skipped.add(skip_key)
         if self.output_manager:
             self.output_manager.write(result)
+        self._emit(EVENT_SUCCESS, **result)
 
     def _log_non_success(self, result):
         host_port = f"{result['host']}:{result['port']}"
@@ -204,6 +261,19 @@ class AttackEngine:
             self._record_success(result, stop_mode, skip_key)
         else:
             self._log_non_success(result)
+            if result["status"] == "error":
+                self._emit(EVENT_ERROR, **result)
+
+        # Emit per-attempt event for observers tracking live progress.
+        self._emit(
+            EVENT_ATTEMPT,
+            status=result["status"],
+            host=result["host"],
+            port=result["port"],
+            user=result["user"],
+            **{"pass": result["pass"]},
+            protocol=result["protocol"],
+        )
 
         progress.update(task_id, advance=1)
 

@@ -61,5 +61,12 @@ COPY --from=builder /install /usr/local
 USER sprayer
 WORKDIR /workspace
 
-ENTRYPOINT ["spraymaster"]
-CMD ["--help"]
+# Persist SQLite history outside the container by mounting a volume to
+# /home/sprayer/.spraymaster — both TUI and Web read/write to that path.
+VOLUME ["/home/sprayer/.spraymaster"]
+
+# Default to the CLI. Override CMD to switch front-ends:
+#   docker run -p 8000:8000 spraymaster spraymaster-web --host 0.0.0.0 --allow-public
+#   docker run -it          spraymaster spraymaster-tui
+ENTRYPOINT []
+CMD ["spraymaster", "--help"]

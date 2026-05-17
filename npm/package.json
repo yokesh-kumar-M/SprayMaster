@@ -1,6 +1,6 @@
 {
   "name": "spraymaster",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Multi-protocol network login auditor and password spraying tool (npm wrapper around the Python CLI).",
   "keywords": [
     "security",
