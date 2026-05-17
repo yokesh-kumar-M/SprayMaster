@@ -43,10 +43,11 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: pyproject.toml
-      - name: Install package + dev extras
+      - name: Install package + dev/web/tui extras
+        # web+tui pull in fastapi/textual which test_web.py and tui tests rely on.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,web,tui]"
       - name: Run tests
         env:
           PYTHONIOENCODING: utf-8
