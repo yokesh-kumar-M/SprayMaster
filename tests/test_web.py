@@ -183,3 +183,166 @@ def test_api_findings_returns_run_findings(auth_client, app):
     body = r.json()
     assert len(body) == 1
     assert body[0]["user"] == "u"
+
+
+# ---------- ops endpoints ----------
+
+def test_healthz_is_unauthenticated_and_returns_ok(client):
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.text == "ok"
+
+
+def test_metrics_requires_auth(client):
+    r = client.get("/metrics")
+    assert r.status_code == 401
+
+
+def test_metrics_emits_prometheus_format(auth_client, app):
+    app.state.history.start_run("ssh", 1, 1, 1, {})
+    r = auth_client.get("/metrics")
+    assert r.status_code == 200
+    body = r.text
+    assert "spraymaster_runs_total" in body
+    assert "spraymaster_findings_total" in body
+    assert "spraymaster_runs_active" in body
+    assert 'spraymaster_info{version="' in body
+
+
+def test_security_headers_set_on_html_responses(auth_client):
+    r = auth_client.get("/")
+    assert r.headers.get("X-Content-Type-Options") == "nosniff"
+    assert r.headers.get("X-Frame-Options") == "DENY"
+    assert "Content-Security-Policy" in r.headers
+
+
+# ---------- validation ----------
+
+def test_start_attack_rejects_bad_port(auth_client):
+    r = auth_client.post(
+        "/attacks",
+        data={
+            "protocol": "ssh",
+            "targets": "10.0.0.1",
+            "users": "admin",
+            "passwords": "x",
+            "port": "not-a-number",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_start_attack_rejects_negative_max_rate(auth_client):
+    r = auth_client.post(
+        "/attacks",
+        data={
+            "protocol": "ssh",
+            "targets": "10.0.0.1",
+            "users": "admin",
+            "passwords": "x",
+            "max_rate": "-5",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_start_attack_rejects_bad_threads(auth_client):
+    r = auth_client.post(
+        "/attacks",
+        data={
+            "protocol": "ssh",
+            "targets": "10.0.0.1",
+            "users": "admin",
+            "passwords": "x",
+            "threads": 0,
+        },
+    )
+    assert r.status_code == 400
+
+
+# ---------- SAFE_DEMO mode ----------
+
+@pytest.fixture
+def demo_app(tmp_path, monkeypatch):
+    """Same as the `app` fixture but with SAFE_DEMO mode flipped on.
+
+    Patches the protocol registries even though attacks should never reach
+    them — keeps the test honest if the gate ever regresses.
+    """
+    monkeypatch.setattr(
+        "spraymaster.core.engine.PROTOCOL_REGISTRY",
+        {"ssh": lambda h, u, p, a: {"status": "fail"}},
+    )
+    monkeypatch.setattr(
+        "spraymaster.web.app.PROTOCOL_REGISTRY",
+        {"ssh": object()},
+    )
+    from spraymaster.web.app import create_app
+
+    return create_app(db_path=tmp_path / "demo.db", auth_token="demo-token", safe_demo=True)
+
+
+@pytest.fixture
+def demo_auth_client(demo_app):
+    c = TestClient(demo_app)
+    c.cookies.set("spraymaster_session", "demo-token")
+    return c
+
+
+def test_demo_mode_blocks_attack_with_403(demo_auth_client):
+    r = demo_auth_client.post(
+        "/attacks",
+        data={
+            "protocol": "ssh",
+            "targets": "10.0.0.1",
+            "users": "admin",
+            "passwords": "x",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+    assert "SAFE_DEMO" in r.text
+
+
+def test_demo_mode_shows_banner_on_index(demo_auth_client):
+    r = demo_auth_client.get("/")
+    assert r.status_code == 200
+    assert "Demo mode" in r.text
+    assert "outbound attacks are disabled" in r.text
+
+
+def test_demo_mode_history_and_metrics_still_work(demo_auth_client, demo_app):
+    demo_app.state.history.start_run("ssh", 1, 1, 1, {})
+    r = demo_auth_client.get("/history")
+    assert r.status_code == 200
+
+    r = demo_auth_client.get("/metrics")
+    assert r.status_code == 200
+    assert "spraymaster_runs_total" in r.text
+
+
+def test_demo_mode_healthz_still_works(demo_auth_client):
+    r = demo_auth_client.get("/healthz")
+    assert r.status_code == 200
+    assert r.text == "ok"
+
+
+def test_safe_demo_env_var_enables_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPRAYMASTER_SAFE_DEMO", "1")
+    monkeypatch.setattr("spraymaster.web.app.PROTOCOL_REGISTRY", {"ssh": object()})
+    from spraymaster.web.app import create_app
+
+    a = create_app(db_path=tmp_path / "envdemo.db", auth_token="t")
+    assert a.state.safe_demo is True
+
+    c = TestClient(a)
+    c.cookies.set("spraymaster_session", "t")
+    r = c.post(
+        "/attacks",
+        data={"protocol": "ssh", "targets": "1.1.1.1", "users": "u", "passwords": "p"},
+    )
+    assert r.status_code == 403
+
+
+def test_default_app_is_not_in_demo_mode(app):
+    assert app.state.safe_demo is False

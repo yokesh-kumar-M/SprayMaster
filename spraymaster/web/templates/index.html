@@ -30,7 +30,10 @@
     <label>Threads<input type="number" name="threads" value="16" min="1" max="512"></label>
     <label>Timeout (s)<input type="number" name="timeout" value="10" min="1"></label>
     <label>Retries<input type="number" name="retries" value="3" min="1"></label>
-    <label>Port <span class="muted small">(blank = default)</span><input type="number" name="port"></label>
+    <label>Port <span class="muted small">(blank = default)</span><input type="number" name="port" min="1" max="65535"></label>
+
+    <label>Max rate <span class="muted small">(req/s, 0 = unlimited)</span><input type="number" name="max_rate" min="0" step="0.1"></label>
+    <label>Per-host cap <span class="muted small">(max concurrent / host)</span><input type="number" name="per_host_rate" min="1"></label>
 
     <label>Stop on success
       <select name="stop_on_success">
@@ -50,6 +53,10 @@
         <input type="text" name="http_form_data" placeholder="username=^USER^&password=^PASS^">
       </label>
       <label>Fail string<input type="text" name="http_fail_string" placeholder="Invalid credentials"></label>
+      <label>Cookies <span class="muted small">(sent verbatim as Cookie:)</span>
+        <input type="text" name="http_cookies" placeholder="sid=abc; csrf=xyz">
+      </label>
+      <label>User-Agent<input type="text" name="user_agent" placeholder="SprayMaster/2.3"></label>
     </fieldset>
 
     <div class="actions span-2">

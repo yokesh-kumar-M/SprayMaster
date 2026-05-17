@@ -1,0 +1,45 @@
+# Render Blueprint — SprayMaster demo deployment
+#
+# What this provisions:
+#   - one web service (Docker build from the repo's Dockerfile)
+#   - a 1 GB persistent disk for the SQLite history DB
+#   - SPRAYMASTER_SAFE_DEMO=1 (attacks are disabled; UI + history + API live)
+#   - auto-generated auth token (printed to the service's boot log on first run)
+#
+# Deploy by:
+#   1) push this repo to GitHub
+#   2) https://dashboard.render.com  ->  New  ->  Blueprint  ->  pick the repo
+#   3) on first boot, open the service's "Logs" tab and copy the token printed
+#      under "SprayMaster Web — auth token" — use it once at /login
+#
+# To rotate the token: set SPRAYMASTER_AUTH_TOKEN in the Render env tab and
+# restart the service.
+#
+# To enable real attacks (NOT recommended on Render — likely AUP violation):
+#   set SPRAYMASTER_SAFE_DEMO=0 in the env tab. The deployment will then run
+#   credential attempts from Render's network and may be terminated.
+
+services:
+  - type: web
+    name: spraymaster-web
+    runtime: docker
+    plan: starter
+    region: oregon
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerCommand: spraymaster-web
+    healthCheckPath: /healthz
+    autoDeploy: true
+    disk:
+      name: spraymaster-data
+      mountPath: /home/sprayer/.spraymaster
+      sizeGB: 1
+    envVars:
+      - key: SPRAYMASTER_SAFE_DEMO
+        value: "1"
+      - key: SPRAYMASTER_DB
+        value: /home/sprayer/.spraymaster/history.db
+      - key: SPRAYMASTER_AUTH_TOKEN
+        generateValue: true
+      - key: PYTHONUNBUFFERED
+        value: "1"

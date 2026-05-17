@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SprayMaster — multi-protocol login auditor</title>
+  <meta name="description" content="SprayMaster is a multi-protocol concurrent network login auditor for authorized penetration testing. CLI, TUI, and web UI for SSH, FTP, HTTP forms, SMTP, LDAP, SMB, RDP, VNC, MySQL, Postgres, MSSQL, Redis, SNMP, Telnet, IMAP, POP3.">
+  <meta property="og:title" content="SprayMaster">
+  <meta property="og:description" content="Multi-protocol login auditor for authorized pentesting. Sixteen protocols, async core, SQLite history, web UI, TUI, CLI.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="container">
+      <h1><span class="brand">SprayMaster</span> <span class="ver" id="ver">v2.3.0</span></h1>
+      <p class="tagline">
+        Multi-protocol concurrent network login auditor &amp; password spraying tool —
+        for <strong>authorized</strong> penetration testing.
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" id="demo-link" href="#demo">Open live demo</a>
+        <a class="btn" href="https://github.com/yokesh-kumar-M/SprayMaster" target="_blank" rel="noopener">View on GitHub</a>
+        <a class="btn btn-ghost" href="#install">Install locally</a>
+      </div>
+      <p class="legal">
+        Demo deployment runs in <code>SAFE_DEMO</code> mode — outbound credential attempts are disabled.
+        Real attacks must be run from a machine you control, against systems you are authorized to test.
+      </p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="grid features">
+      <article>
+        <h3>Sixteen protocols</h3>
+        <p>SSH, FTP, FTPS, HTTP/HTTPS forms, SMTP, LDAP/LDAPS, SMB, RDP, VNC, MySQL, Postgres, MSSQL, Redis, SNMP, Telnet, IMAP, POP3.</p>
+      </article>
+      <article>
+        <h3>Three front-ends</h3>
+        <p>A clean Rich-powered <strong>CLI</strong>, a Textual <strong>TUI</strong>, and a FastAPI <strong>web UI</strong> with live WebSocket progress and run history.</p>
+      </article>
+      <article>
+        <h3>Operator-friendly</h3>
+        <p>Async core with per-host concurrency caps, global rate limits, retry with jitter, stop-on-success modes, JSON/CSV output, SQLite history, Prometheus <code>/metrics</code>.</p>
+      </article>
+      <article>
+        <h3>Safe by default</h3>
+        <p>Web UI refuses non-loopback binds without an opt-in flag. Bearer-token auth, security headers, CSP. Designed to slot behind a VPN or reverse proxy.</p>
+      </article>
+    </section>
+
+    <section id="demo" class="card">
+      <h2>Live demo</h2>
+      <p>
+        A SAFE_DEMO instance of the SprayMaster web UI runs on Render:
+      </p>
+      <p>
+        <a class="btn btn-primary btn-big" id="demo-app-link" href="https://spraymaster-web.onrender.com" target="_blank" rel="noopener">
+          spraymaster-web.onrender.com →
+        </a>
+      </p>
+      <p class="muted">
+        The demo's auth token is set as a Render env variable named <code>SPRAYMASTER_AUTH_TOKEN</code> — grab it
+        from the Render dashboard's Environment tab, then paste it at <code>/login</code>. The first paint may
+        take ~30 seconds (free-tier cold start). Real attack submissions return <code>403 demo mode</code>;
+        history, API, <code>/metrics</code>, and <code>/healthz</code> are live.
+      </p>
+    </section>
+
+    <section id="install" class="card">
+      <h2>Install &amp; run locally</h2>
+      <pre><code>pip install "spraymaster[web]"
+
+# CLI
+spraymaster --protocol ssh --target 192.0.2.10 --users users.txt --passwords passwords.txt
+
+# Web UI
+spraymaster-web --port 8000   # then open http://127.0.0.1:8000
+
+# TUI
+pip install "spraymaster[tui]" &amp;&amp; spraymaster-tui</code></pre>
+      <p class="muted">Requires Python 3.9+. For all protocol extras: <code>pip install "spraymaster[all]"</code>.</p>
+    </section>
+
+    <section class="card">
+      <h2>Run with Docker</h2>
+      <pre><code>docker run --rm -p 8000:8000 \
+  -v spraymaster-data:/home/sprayer/.spraymaster \
+  -e SPRAYMASTER_AUTH_TOKEN=$(openssl rand -hex 16) \
+  ghcr.io/yokesh-kumar-m/spraymaster:latest spraymaster-web</code></pre>
+    </section>
+
+    <section class="card warning">
+      <h2>Legal &amp; scope</h2>
+      <p>
+        SprayMaster is a dual-use security tool. You are responsible for ensuring you have
+        <strong>written authorization</strong> from the system owner before testing any target.
+        Unauthorized use against systems you do not own or have explicit permission to test
+        is illegal in most jurisdictions. The maintainer accepts no liability for misuse. MIT licensed.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p class="muted">
+        © Yokesh Kumar M ·
+        <a href="https://github.com/yokesh-kumar-M/SprayMaster">GitHub</a> ·
+        <a href="https://github.com/yokesh-kumar-M/SprayMaster/blob/main/CHANGELOG.md">Changelog</a> ·
+        <a href="https://github.com/yokesh-kumar-M/SprayMaster/blob/main/LICENSE">MIT</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

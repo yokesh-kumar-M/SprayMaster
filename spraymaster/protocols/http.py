@@ -1,10 +1,26 @@
 import json as _json
+import threading
 
 import requests
 import urllib3
 from requests.auth import HTTPBasicAuth
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Per-thread Session pool. Reusing a Session enables HTTP keep-alive — for a
+# typical password-spray run against one host this turns N TCP/TLS handshakes
+# into one, which is the single biggest throughput win on HTTPS targets.
+_LOCAL = threading.local()
+
+_DEFAULT_UA = "SprayMaster/2.3 (+authorized-pentest)"
+
+
+def _session() -> requests.Session:
+    sess = getattr(_LOCAL, "session", None)
+    if sess is None:
+        sess = requests.Session()
+        _LOCAL.session = sess
+    return sess
 
 
 def _parse_headers(headers_raw):
@@ -51,7 +67,12 @@ def try_login(host, username, password, args):
     form_data = getattr(args, "http_form_data", None)
     fail_str = getattr(args, "http_fail_string", None)
     success_str = getattr(args, "http_success_string", None)
-    headers = _parse_headers(getattr(args, "http_headers", None))
+    headers = dict(_parse_headers(getattr(args, "http_headers", None)))
+    user_agent = getattr(args, "user_agent", None) or _DEFAULT_UA
+    headers.setdefault("User-Agent", user_agent)
+    cookies = getattr(args, "http_cookies", None)
+    if cookies and "Cookie" not in headers:
+        headers["Cookie"] = cookies
     proxy_url = getattr(args, "proxy", None)
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     # SECURITY: TLS verification defaults to disabled because this tool is used
@@ -81,7 +102,7 @@ def try_login(host, username, password, args):
     }
 
     try:
-        session = requests.Session()
+        session = _session()
         if form_data:
             body = form_data.replace("^USER^", username).replace("^PASS^", password)
             resp = _send_form_request(
@@ -92,12 +113,17 @@ def try_login(host, username, password, args):
             resp = session.get(
                 url,
                 auth=HTTPBasicAuth(username, password),
-                headers=headers,
-                timeout=timeout,
-                verify=verify_ssl,
-                proxies=proxies,
+                **request_kwargs,
             )
-            result["status"] = "success" if resp.status_code == 200 else "fail"
+            # 401/403 are the canonical Basic-Auth rejections; everything else
+            # below 400 is treated as access granted. 5xx is a server problem,
+            # not an auth signal, so don't claim success on it.
+            if resp.status_code in (401, 403):
+                result["status"] = "fail"
+            elif 200 <= resp.status_code < 400:
+                result["status"] = "success"
+            else:
+                result["status"] = "fail"
 
     except requests.exceptions.ProxyError as e:
         result["status"] = "error"

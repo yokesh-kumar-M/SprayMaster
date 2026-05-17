@@ -221,6 +221,7 @@ class RunScreen(Screen):
         self._completed = 0
         self._successes = 0
         self._errors = 0
+        self._finalised = False  # True once attack_done has been processed
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -286,17 +287,22 @@ class RunScreen(Screen):
                     f"{event['user']}  →  {event.get('error', '')[:80]}"
                 )
         elif et == "attack_done":
+            cancelled = bool(event.get("cancelled"))
             self._history.finish_run(
                 self._run_id,
-                status="done",
+                status="cancelled" if cancelled else "done",
                 total_attempts=event.get("total", self._completed),
                 success_count=event.get("successes", self._successes),
                 error_count=event.get("errors", self._errors),
             )
+            self._finalised = True
+            successes = event.get("successes", self._successes)
+            total = event.get("total", self._completed)
+            duration = float(event.get("duration", 0.0))
+            verb = "cancelled" if cancelled else "finished"
             log.write_line(
-                f"\n[b cyan]Attack finished[/]  "
-                f"{event['successes']} valid / {event['total']} attempts "
-                f"in {event['duration']:.1f}s"
+                f"\n[b cyan]Attack {verb}[/]  "
+                f"{successes} valid / {total} attempts in {duration:.1f}s"
             )
 
         self.query_one("#cnt-success", Static).update(
@@ -325,16 +331,21 @@ class RunScreen(Screen):
             self.notify("Stop requested — finishing in-flight attempts...")
 
     def action_back(self) -> None:
-        if self._runner is not None and self._runner.is_alive:
-            self._runner.stop()
-        if self._run_id is not None:
-            self._history.finish_run(
-                self._run_id,
-                status="cancelled" if self._runner and self._runner.is_alive else "done",
-                total_attempts=self._completed,
-                success_count=self._successes,
-                error_count=self._errors,
-            )
+        # If the engine already emitted attack_done, the history row is already
+        # written — don't overwrite "done" with "cancelled" when the user just
+        # navigates back from a completed run.
+        if not self._finalised:
+            still_running = self._runner is not None and self._runner.is_alive
+            if still_running:
+                self._runner.stop()
+            if self._run_id is not None:
+                self._history.finish_run(
+                    self._run_id,
+                    status="cancelled" if still_running else "done",
+                    total_attempts=self._completed,
+                    success_count=self._successes,
+                    error_count=self._errors,
+                )
         self.app.pop_screen()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

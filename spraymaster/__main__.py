@@ -23,6 +23,7 @@ warnings.filterwarnings("ignore", message=".*urllib3.*")
 
 from spraymaster import __version__
 from spraymaster.core.engine import AttackEngine
+from spraymaster.core.logging_utils import install_json_handler
 from spraymaster.core.utils import load_combo_list, load_list
 from spraymaster.protocols import PROTOCOL_REGISTRY, PROTOCOL_REQUIRES
 
@@ -73,6 +74,26 @@ def _print_protocols(console: Console) -> None:
         )
 
 
+def _positive_int(value: str) -> int:
+    try:
+        ivalue = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if ivalue < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1 (got {ivalue})")
+    return ivalue
+
+
+def _non_negative_float(value: str) -> float:
+    try:
+        fvalue = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected a number, got {value!r}") from exc
+    if fvalue < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0 (got {fvalue})")
+    return fvalue
+
+
 def _build_parser(available_protocols):
     parser = argparse.ArgumentParser(
         prog="spraymaster",
@@ -101,6 +122,12 @@ def _build_parser(available_protocols):
         "--quiet",
         action="store_true",
         help="Suppress non-essential output (only show successes and errors)",
+    )
+    parser.add_argument(
+        "--log-json",
+        dest="log_json",
+        metavar="FILE",
+        help="Also emit structured JSON-line logs to FILE (use '-' for stderr)",
     )
 
     t = parser.add_argument_group("Targets")
@@ -136,7 +163,7 @@ def _build_parser(available_protocols):
     )
     a.add_argument(
         "--port",
-        type=int,
+        type=_positive_int,
         metavar="PORT",
         help="Custom port (overrides protocol default)",
     )
@@ -163,31 +190,46 @@ def _build_parser(available_protocols):
     perf = parser.add_argument_group("Performance")
     perf.add_argument(
         "--threads",
-        type=int,
+        type=_positive_int,
         default=16,
         metavar="N",
         help="Concurrent threads (default: 16)",
     )
     perf.add_argument(
         "--delay",
-        type=float,
+        type=_non_negative_float,
         default=0.0,
         metavar="SECS",
         help="Delay between each attempt in seconds (default: 0)",
     )
     perf.add_argument(
         "--timeout",
-        type=int,
+        type=_positive_int,
         default=10,
         metavar="SECS",
         help="Connection timeout in seconds (default: 10)",
     )
     perf.add_argument(
         "--retries",
-        type=int,
+        type=_positive_int,
         default=3,
         metavar="N",
         help="Retry count on connection error (default: 3)",
+    )
+    perf.add_argument(
+        "--max-rate",
+        dest="max_rate",
+        type=_non_negative_float,
+        default=0.0,
+        metavar="RPS",
+        help="Global rate cap in requests per second (0 = unlimited)",
+    )
+    perf.add_argument(
+        "--per-host-rate",
+        dest="per_host_rate",
+        type=_positive_int,
+        metavar="N",
+        help="Maximum concurrent attempts against any single host",
     )
 
     http = parser.add_argument_group("HTTP Options  (--protocol http / https)")
@@ -232,6 +274,18 @@ def _build_parser(available_protocols):
         metavar="JSON",
         help="Extra request headers as a JSON object\n"
         'Example: \'{"X-Forwarded-For": "1.2.3.4"}\'',
+    )
+    http.add_argument(
+        "--http-cookies",
+        dest="http_cookies",
+        metavar="STR",
+        help='Cookie header value sent with every request, e.g. "sid=abc; csrf=def"',
+    )
+    http.add_argument(
+        "--user-agent",
+        dest="user_agent",
+        metavar="UA",
+        help="Override the User-Agent header on HTTP requests",
     )
     http.add_argument(
         "--verify-ssl",
@@ -337,7 +391,7 @@ def _validate_inputs(target_list, user_list, pass_list, has_combo):
     return errors
 
 
-def _configure_logging(console, verbose, quiet):
+def _configure_logging(console, verbose, quiet, json_log: str | None = None):
     if quiet:
         log_level = "WARNING"
     elif verbose:
@@ -354,12 +408,26 @@ def _configure_logging(console, verbose, quiet):
             )
         ],
     )
+    if json_log:
+        install_json_handler(json_log)
     return logging.getLogger("SprayMaster")
 
 
-def _install_sigint_handler(console: Console) -> None:
+def _install_sigint_handler(console: Console, engine_ref: list) -> None:
+    """SIGINT: request graceful stop the first time, hard-exit on a repeat."""
+
+    state = {"received": 0}
+
     def _handler(signum, frame):
-        console.print("\n[bold yellow]  ⚠  Interrupt received — shutting down...[/bold yellow]")
+        state["received"] += 1
+        if state["received"] == 1 and engine_ref and engine_ref[0] is not None:
+            console.print(
+                "\n[bold yellow]  ⚠  Interrupt received — stopping gracefully "
+                "(Ctrl+C again to force).[/bold yellow]"
+            )
+            engine_ref[0].request_stop()
+            return
+        console.print("\n[bold red]  ⚠  Force-exit.[/bold red]")
         sys.exit(130)
 
     signal.signal(signal.SIGINT, _handler)
@@ -371,7 +439,9 @@ def main() -> int:
     # when not attached to a real terminal so output is plain UTF-8 text.
     is_tty = sys.stdout.isatty()
     console = Console(legacy_windows=False if not is_tty else None, force_terminal=is_tty or None)
-    _install_sigint_handler(console)
+
+    engine_ref: list = [None]
+    _install_sigint_handler(console, engine_ref)
 
     available = sorted(PROTOCOL_REGISTRY.keys())
     parser = _build_parser(available)
@@ -384,7 +454,9 @@ def main() -> int:
     if not args.no_banner and not args.quiet:
         _print_banner(console)
 
-    logger = _configure_logging(console, args.verbose, args.quiet)
+    logger = _configure_logging(
+        console, args.verbose, args.quiet, getattr(args, "log_json", None)
+    )
 
     target_list = _load_targets(args)
     user_list, pass_list = _load_credentials(args, logger)
@@ -396,8 +468,11 @@ def main() -> int:
         return 2
 
     engine = AttackEngine(args, target_list, user_list, pass_list, console)
+    engine_ref[0] = engine
     engine.run()
     successes = [r for r in engine.results if r["status"] == "success"]
+    if engine.stopped and not successes:
+        return 130
     return 0 if successes else 1
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from typing import Callable
 
 from spraymaster.storage.history import History
 from spraymaster.tui.runner import EngineRunner, build_args
@@ -20,7 +21,7 @@ class ActiveRun:
         self,
         loop: asyncio.AbstractEventLoop,
         run_id: int,
-        on_done: callable | None = None,
+        on_done: Callable[[dict], None] | None = None,
     ):
         self.runner: EngineRunner | None = None
         self.run_id = run_id
@@ -30,6 +31,7 @@ class ActiveRun:
         self._buffer: list[dict] = []  # replay buffer for newly-connecting clients
         self._buffer_cap = 500
         self._on_done = on_done  # fired on attack_done, in the event-loop thread
+        self.finished = False
 
     # ---------- subscriber side (asyncio) ----------
     def subscribe(self) -> asyncio.Queue:
@@ -50,7 +52,11 @@ class ActiveRun:
     # ---------- producer side (worker thread) ----------
     def _on_engine_event(self, event: dict) -> None:
         # Called on the engine's worker thread. Push onto the event loop.
-        self._loop.call_soon_threadsafe(self._fanout, event)
+        try:
+            self._loop.call_soon_threadsafe(self._fanout, event)
+        except RuntimeError:
+            # Loop already closed (e.g. server shutting down) — drop the event.
+            pass
 
     def _fanout(self, event: dict) -> None:
         with self._lock:
@@ -61,8 +67,10 @@ class ActiveRun:
                     q.put_nowait(event)
                 except asyncio.QueueFull:  # pragma: no cover - unbounded queues
                     pass
-        if event.get("type") == "attack_done" and self._on_done is not None:
-            self._on_done(event)
+        if event.get("type") == "attack_done":
+            self.finished = True
+            if self._on_done is not None:
+                self._on_done(event)
 
 
 class RunRegistry:
@@ -70,6 +78,11 @@ class RunRegistry:
         self.history = history
         self._lock = threading.Lock()
         self._runs: dict[int, ActiveRun] = {}
+
+    @property
+    def active_count(self) -> int:
+        with self._lock:
+            return len(self._runs)
 
     def start(
         self,
@@ -88,9 +101,10 @@ class RunRegistry:
         )
 
         def _on_done(event: dict) -> None:
+            status = "cancelled" if event.get("cancelled") else "done"
             self.history.finish_run(
                 run_id,
-                status="done",
+                status=status,
                 total_attempts=event.get("total", 0),
                 success_count=event.get("successes", 0),
                 error_count=event.get("errors", 0),
@@ -120,7 +134,7 @@ class RunRegistry:
 
     def stop(self, run_id: int) -> bool:
         active = self.get(run_id)
-        if active is None:
+        if active is None or active.runner is None:
             return False
         active.runner.stop()
         return True

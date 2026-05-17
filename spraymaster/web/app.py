@@ -10,6 +10,8 @@ Routes:
   GET  /history/{id}        findings for a run
   POST /history/{id}/delete delete a run + its findings
   WS   /ws/attacks/{id}     event stream
+  GET  /healthz             liveness check (no auth)
+  GET  /metrics             Prometheus-format counters (auth required)
 
 Auth: single bearer token via cookie / header / ?token=. See web/auth.py.
 """
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from fastapi import (
@@ -31,9 +34,10 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from spraymaster import __version__
 from spraymaster.core.utils import load_combo_list, load_list
@@ -72,21 +76,82 @@ def _parse_targets_field(value: str) -> list[str]:
     return out
 
 
-def create_app(*, db_path: Path | None = None, auth_token: str | None = None) -> FastAPI:
+_DEMO_ENV_VAR = "SPRAYMASTER_SAFE_DEMO"
+_DEMO_MESSAGE = (
+    "This deployment is in SAFE_DEMO mode — outbound credential attempts are "
+    "disabled. The UI, history, API, and metrics endpoints work for "
+    "demonstration purposes only. Run SprayMaster locally (`pip install "
+    "spraymaster[web] && spraymaster-web`) to launch real attacks against "
+    "systems you are authorized to test."
+)
+
+
+def _is_safe_demo() -> bool:
+    """Return True if the deployment should refuse to start real attacks."""
+    raw = os.environ.get(_DEMO_ENV_VAR, "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _optional_int(value: str, *, field: str, minimum: int = 1) -> int | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        n = int(raw)
+    except ValueError as exc:
+        raise HTTPException(400, f"{field} must be an integer") from exc
+    if n < minimum:
+        raise HTTPException(400, f"{field} must be >= {minimum}")
+    return n
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        resp: Response = await call_next(request)
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        # CSP allows the htmx CDN (used by base.html) but otherwise locks down
+        # script and style origins. Inline scripts on attack.html are tolerated
+        # via 'unsafe-inline' — acceptable here because the UI is auth-gated
+        # and we control all templates.
+        resp.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline'; "
+            "connect-src 'self' ws: wss:; "
+            "img-src 'self' data:; "
+            "frame-ancestors 'none'",
+        )
+        return resp
+
+
+def create_app(
+    *,
+    db_path: Path | None = None,
+    auth_token: str | None = None,
+    safe_demo: bool | None = None,
+) -> FastAPI:
     history = History(db_path=db_path)
     token = auth_token or resolve_token()
     registry = RunRegistry(history)
+    demo_mode = _is_safe_demo() if safe_demo is None else safe_demo
 
     app = FastAPI(title="SprayMaster Web", version=__version__)
     app.state.history = history
     app.state.registry = registry
     app.state.auth_token = token
+    app.state.safe_demo = demo_mode
+    app.add_middleware(SecurityHeadersMiddleware)
 
     if _STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     templates.env.globals["spraymaster_version"] = __version__
+    templates.env.globals["safe_demo"] = demo_mode
+    templates.env.globals["safe_demo_message"] = _DEMO_MESSAGE
 
     # ---------- auth dep ----------
     # JSON API uses 401 (machine-readable). HTML pages do their own
@@ -153,14 +218,26 @@ def create_app(*, db_path: Path | None = None, auth_token: str | None = None) ->
         stop_on_success: str = Form("none"),
         spray: str = Form(""),
         ssl: str = Form(""),
+        max_rate: str = Form(""),
+        per_host_rate: str = Form(""),
         http_path: str = Form("/"),
         http_form_data: str = Form(""),
         http_fail_string: str = Form(""),
+        http_cookies: str = Form(""),
+        user_agent: str = Form(""),
     ):
         if not is_authenticated(request, token):
             return redirect_to_login()
+        if demo_mode:
+            raise HTTPException(status_code=403, detail=_DEMO_MESSAGE)
         if protocol not in PROTOCOL_REGISTRY:
             raise HTTPException(400, f"Unknown protocol: {protocol}")
+        if threads < 1:
+            raise HTTPException(400, "threads must be >= 1")
+        if timeout < 1:
+            raise HTTPException(400, "timeout must be >= 1")
+        if retries < 1:
+            raise HTTPException(400, "retries must be >= 1")
 
         target_list = _parse_targets_field(targets)
         if combo.strip():
@@ -169,7 +246,7 @@ def create_app(*, db_path: Path | None = None, auth_token: str | None = None) ->
                 raise HTTPException(400, f"Combo file not found: {combo}")
             pairs = load_combo_list(str(p))
             user_list = [u for u, _ in pairs]
-            pass_list = [p for _, p in pairs]
+            pass_list = [pw for _, pw in pairs]
         else:
             user_list = _parse_targets_field(users)
             pass_list = _parse_targets_field(passwords)
@@ -178,6 +255,17 @@ def create_app(*, db_path: Path | None = None, auth_token: str | None = None) ->
             raise HTTPException(400, "At least one target required")
         if not user_list or not pass_list:
             raise HTTPException(400, "Users and passwords required (or use a combo file)")
+
+        port_val = _optional_int(port, field="port", minimum=1)
+        per_host_val = _optional_int(per_host_rate, field="per_host_rate", minimum=1)
+        max_rate_val: float | None = None
+        if max_rate.strip():
+            try:
+                max_rate_val = float(max_rate.strip())
+            except ValueError as exc:
+                raise HTTPException(400, "max_rate must be a number") from exc
+            if max_rate_val < 0:
+                raise HTTPException(400, "max_rate must be >= 0")
 
         form = {
             "protocol": protocol,
@@ -188,10 +276,14 @@ def create_app(*, db_path: Path | None = None, auth_token: str | None = None) ->
             "timeout": timeout,
             "retries": retries,
             "stop_on_success": stop_on_success,
-            "port": int(port) if port.strip() else None,
+            "port": port_val,
+            "max_rate": max_rate_val,
+            "per_host_rate": per_host_val,
             "http_path": http_path or "/",
             "http_form_data": http_form_data or None,
             "http_fail_string": http_fail_string or None,
+            "http_cookies": http_cookies or None,
+            "user_agent": user_agent or None,
         }
 
         loop = asyncio.get_running_loop()
@@ -271,6 +363,47 @@ def create_app(*, db_path: Path | None = None, auth_token: str | None = None) ->
             }
             for f in history.findings_for(run_id)
         ]
+
+    # ---------- ops endpoints ----------
+
+    @app.get("/healthz", response_class=PlainTextResponse)
+    async def healthz():
+        return "ok"
+
+    @app.get(
+        "/metrics",
+        response_class=PlainTextResponse,
+        dependencies=[Depends(auth_dep)],
+    )
+    async def metrics():
+        runs = history.list_runs(limit=10_000)
+        total_runs = len(runs)
+        total_findings = sum(r.success_count for r in runs)
+        total_attempts = sum((r.total_attempts or 0) for r in runs)
+        total_errors = sum(r.error_count for r in runs)
+        active = registry.active_count
+        lines = [
+            "# HELP spraymaster_info Build info",
+            "# TYPE spraymaster_info gauge",
+            f'spraymaster_info{{version="{__version__}"}} 1',
+            "# HELP spraymaster_runs_total Total runs recorded",
+            "# TYPE spraymaster_runs_total counter",
+            f"spraymaster_runs_total {total_runs}",
+            "# HELP spraymaster_runs_active Currently-active runs",
+            "# TYPE spraymaster_runs_active gauge",
+            f"spraymaster_runs_active {active}",
+            "# HELP spraymaster_attempts_total Total credential attempts",
+            "# TYPE spraymaster_attempts_total counter",
+            f"spraymaster_attempts_total {total_attempts}",
+            "# HELP spraymaster_findings_total Valid credentials discovered",
+            "# TYPE spraymaster_findings_total counter",
+            f"spraymaster_findings_total {total_findings}",
+            "# HELP spraymaster_errors_total Connection/protocol errors",
+            "# TYPE spraymaster_errors_total counter",
+            f"spraymaster_errors_total {total_errors}",
+            "",
+        ]
+        return "\n".join(lines)
 
     # ---------- WebSocket: live event stream ----------
 

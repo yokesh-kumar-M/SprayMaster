@@ -39,12 +39,16 @@ def build_args(form: dict) -> argparse.Namespace:
         proxy=form.get("proxy"),
         smb_domain=form.get("smb_domain"),
         verify_ssl=bool(form.get("verify_ssl", False)),
+        max_rate=form.get("max_rate") or 0.0,
+        per_host_rate=form.get("per_host_rate"),
         http_path=form.get("http_path", "/"),
         http_method=form.get("http_method", "POST"),
         http_form_data=form.get("http_form_data"),
         http_fail_string=form.get("http_fail_string"),
         http_success_string=form.get("http_success_string"),
         http_headers=form.get("http_headers"),
+        http_cookies=form.get("http_cookies"),
+        user_agent=form.get("user_agent"),
     )
 
 

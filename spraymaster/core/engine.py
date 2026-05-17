@@ -2,6 +2,7 @@ import concurrent.futures
 import logging
 import threading
 import time
+from collections.abc import Iterable, Iterator
 from typing import Callable, Optional
 
 from rich.progress import (
@@ -16,6 +17,7 @@ from rich.progress import (
 from rich.table import Table
 
 from spraymaster.core.output import OutputManager
+from spraymaster.core.ratelimit import HostSemaphores, TokenBucket
 from spraymaster.protocols import PROTOCOL_REGISTRY, PROTOCOL_REQUIRES
 
 # Engine event types — stable contract for TUI / Web observers.
@@ -53,9 +55,22 @@ class AttackEngine:
         self.output_manager = None
         self._on_event = on_event
 
+        max_rate = float(getattr(args, "max_rate", 0) or 0)
+        self._bucket: TokenBucket | None = (
+            TokenBucket(max_rate) if max_rate > 0 else None
+        )
+        per_host = int(getattr(args, "per_host_rate", 0) or 0)
+        self._host_sems: HostSemaphores | None = (
+            HostSemaphores(per_host) if per_host > 0 else None
+        )
+
     def request_stop(self) -> None:
         """External stop signal — observers can halt an in-flight attack."""
         self._stop_event.set()
+
+    @property
+    def stopped(self) -> bool:
+        return self._stop_event.is_set()
 
     def _emit(self, event_type: str, **payload) -> None:
         if self._on_event is None:
@@ -97,8 +112,14 @@ class AttackEngine:
             )
         return login_func
 
-    def _execute_attack(self, login_func, tasks):
-        total = len(tasks)
+    # ------------------------------------------------------------------
+    def _execute_attack(self, login_func, tasks: Iterable):
+        total = len(tasks) if hasattr(tasks, "__len__") else None
+        # In-flight cap: keep the executor saturated but never queue the whole
+        # task list up front. Critical for million-task wordlists.
+        threads = max(1, int(self.args.threads))
+        in_flight_cap = max(threads * 4, 32)
+
         with Progress(
             SpinnerColumn(style="cyan"),
             TextColumn("[progress.description]{task.description}"),
@@ -110,33 +131,59 @@ class AttackEngine:
             transient=False,
         ) as progress:
             ptask = progress.add_task(
-                f"  [bold cyan]{self.args.protocol.upper()}[/bold cyan]", total=total
+                f"  [bold cyan]{self.args.protocol.upper()}[/bold cyan]",
+                total=total,
             )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+                self._drive_executor(
+                    executor, login_func, iter(tasks), progress, ptask, in_flight_cap
+                )
 
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=self.args.threads
-            ) as executor:
-                futures = self._submit_tasks(executor, login_func, tasks, progress, ptask)
-                self._wait_for_completion(futures)
+    def _drive_executor(
+        self,
+        executor: concurrent.futures.ThreadPoolExecutor,
+        login_func,
+        task_iter: Iterator,
+        progress,
+        ptask,
+        in_flight_cap: int,
+    ) -> None:
+        pending: set[concurrent.futures.Future] = set()
+        exhausted = False
 
-    def _submit_tasks(self, executor, login_func, tasks, progress, ptask):
-        futures = []
-        for task in tasks:
-            if self._stop_event.is_set():
+        def submit_one() -> bool:
+            nonlocal exhausted
+            try:
+                task = next(task_iter)
+            except StopIteration:
+                exhausted = True
+                return False
+            fut = executor.submit(self._worker, login_func, *task, progress, ptask)
+            pending.add(fut)
+            return True
+
+        # Prime the pipeline.
+        while len(pending) < in_flight_cap and not self._stop_event.is_set():
+            if not submit_one():
                 break
-            fut = executor.submit(
-                self._worker, login_func, *task, progress, ptask
+
+        while pending:
+            done, pending = concurrent.futures.wait(
+                pending,
+                timeout=0.25,
+                return_when=concurrent.futures.FIRST_COMPLETED,
             )
-            futures.append(fut)
-        return futures
-
-    def _wait_for_completion(self, futures):
-        for _ in concurrent.futures.as_completed(futures):
             if self._stop_event.is_set():
-                for pending in futures:
-                    pending.cancel()
+                for f in pending:
+                    f.cancel()
+                pending.clear()
                 break
+            for _ in done:
+                if exhausted or self._stop_event.is_set():
+                    continue
+                submit_one()
 
+    # ------------------------------------------------------------------
     def run(self):
         login_func = self._resolve_login_func()
         if not login_func:
@@ -165,23 +212,26 @@ class AttackEngine:
         )
 
         self._print_header(len(tasks))
-        self._execute_attack(login_func, tasks)
-        self._generate_report()
+        try:
+            self._execute_attack(login_func, tasks)
+        finally:
+            self._generate_report()
 
-        duration = time.time() - self.start_time
-        successes = [r for r in self.results if r["status"] == "success"]
-        errors = [r for r in self.results if r["status"] == "error"]
-        self._emit(
-            EVENT_ATTACK_DONE,
-            duration=duration,
-            total=len(self.results),
-            successes=len(successes),
-            errors=len(errors),
-            findings=successes,
-        )
+            duration = time.time() - self.start_time
+            successes = [r for r in self.results if r["status"] == "success"]
+            errors = [r for r in self.results if r["status"] == "error"]
+            self._emit(
+                EVENT_ATTACK_DONE,
+                duration=duration,
+                total=len(self.results),
+                successes=len(successes),
+                errors=len(errors),
+                findings=successes,
+                cancelled=self._stop_event.is_set(),
+            )
 
-        if self.output_manager:
-            self.output_manager.close()
+            if self.output_manager:
+                self.output_manager.close()
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -198,15 +248,34 @@ class AttackEngine:
         with self._skip_lock:
             return skip_key in self._skipped
 
+    def _interruptible_sleep(self, duration: float) -> bool:
+        """Sleep up to ``duration`` seconds, returning False if stopped."""
+        if duration <= 0:
+            return not self._stop_event.is_set()
+        deadline = time.monotonic() + duration
+        chunk = 0.1
+        while True:
+            if self._stop_event.is_set():
+                return False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return True
+            time.sleep(min(chunk, remaining))
+
     def _attempt_with_retries(self, login_func, target, user, password):
-        retries = max(1, getattr(self.args, "retries", 3))
+        retries = max(1, int(getattr(self.args, "retries", 3) or 1))
         result = None
         for attempt in range(retries):
+            if self._stop_event.is_set():
+                break
             result = login_func(target, user, password, self.args)
             if result["status"] != "error":
                 return result
             if attempt < retries - 1:
-                time.sleep(0.5 * (2**attempt))
+                # Exponential backoff capped, but interruptible.
+                backoff = min(5.0, 0.5 * (2**attempt))
+                if not self._interruptible_sleep(backoff):
+                    break
         return result
 
     def _record_success(self, result, stop_mode, skip_key):
@@ -249,10 +318,33 @@ class AttackEngine:
             progress.update(task_id, advance=1)
             return
 
-        if self.args.delay > 0:
-            time.sleep(self.args.delay)
+        # Global RPS pacing first — token bucket honours stop.
+        if self._bucket is not None:
+            if not self._bucket.acquire(self._stop_event):
+                progress.update(task_id, advance=1)
+                return
+
+        # Per-host concurrency cap.
+        if self._host_sems is not None:
+            with self._host_sems.slot(target, self._stop_event) as ok:
+                if not ok:
+                    progress.update(task_id, advance=1)
+                    return
+                self._do_attempt(login_func, target, user, password, stop_mode, skip_key)
+        else:
+            self._do_attempt(login_func, target, user, password, stop_mode, skip_key)
+
+        progress.update(task_id, advance=1)
+
+    def _do_attempt(self, login_func, target, user, password, stop_mode, skip_key) -> None:
+        delay = float(getattr(self.args, "delay", 0) or 0)
+        if delay > 0 and not self._interruptible_sleep(delay):
+            return
 
         result = self._attempt_with_retries(login_func, target, user, password)
+        if result is None:
+            # Stopped before the first attempt could run.
+            return
 
         with self._results_lock:
             self.results.append(result)
@@ -264,7 +356,6 @@ class AttackEngine:
             if result["status"] == "error":
                 self._emit(EVENT_ERROR, **result)
 
-        # Emit per-attempt event for observers tracking live progress.
         self._emit(
             EVENT_ATTEMPT,
             status=result["status"],
@@ -274,8 +365,6 @@ class AttackEngine:
             **{"pass": result["pass"]},
             protocol=result["protocol"],
         )
-
-        progress.update(task_id, advance=1)
 
     # ------------------------------------------------------------------
     def _print_header(self, total: int):
@@ -298,6 +387,10 @@ class AttackEngine:
         ]
         if self.args.delay > 0:
             rows.append(("Delay", f"{self.args.delay}s"))
+        if self._bucket is not None:
+            rows.append(("Max RPS", f"{self._bucket.rate:g}"))
+        if self._host_sems is not None:
+            rows.append(("Per-host cap", str(self._host_sems.per_host)))
         if getattr(self.args, "proxy", None):
             rows.append(("Proxy", self.args.proxy))
         if getattr(self.args, "output", None):
@@ -346,6 +439,8 @@ class AttackEngine:
         table.add_row("Errors", f"[red]{len(errors)}[/red]" if errors else "0")
         table.add_row("Duration", f"{duration:.2f}s")
         table.add_row("Speed", f"{speed:.1f} req/s")
+        if self._stop_event.is_set():
+            table.add_row("Status", "[yellow]cancelled[/yellow]")
         if getattr(self.args, "output", None) and successes:
             table.add_row("Saved to", self.args.output)
 

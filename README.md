@@ -219,15 +219,22 @@ Several paths depending on how you want users to consume it.
 | **Docker Hub**   | Same, broader reach | `docker pull yourname/spraymaster` | Set `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` secrets |
 | **GitHub Releases** | "Just give me a binary" users | PyInstaller single-file builds for Linux/macOS/Windows | Built automatically on tag |
 
-### Self-hosted web service (Phase 2 — coming)
+### Hosted demo (Render + Vercel)
 
-The FastAPI web UI + Textual TUI live in a separate phase. The CLI core is engine-agnostic and already exposes a clean `AttackEngine` API, so wiring those on top is additive — no breaking change to existing CLI users.
+A SAFE_DEMO instance of the FastAPI web UI is deployable to Render with one click using the Blueprint at the repo root:
 
-Planned web deployment options:
+- **`render.yaml`** — Docker web service, 1 GB persistent disk for SQLite history, auto-generated auth token, `SPRAYMASTER_SAFE_DEMO=1` (UI/history/API/metrics are live; outbound attack submissions return `403`).
+- **`deploy/vercel/`** — static landing page (HTML + CSS, no build step) that pitches the project and links to the Render demo + GitHub repo. Deploy with `cd deploy/vercel && vercel deploy --prod`.
 
-- **Vercel / Fly.io / Railway / Render** for the FastAPI front-end (engine runs in a worker)
+See [`deploy/README.md`](deploy/README.md) for the full walkthrough, security caveats, and other PaaS targets (Fly.io, Railway, Koyeb).
+
+> **Why SAFE_DEMO?** SprayMaster is a credential-testing tool. Render and Vercel — like most PaaS — prohibit outbound credential attacks in their AUPs, regardless of intent. The demo deployment proves the UI works without putting your account at risk. Real attacks must run from a host you control, against systems you are authorized to test.
+
+Other deployment options also available:
+
 - **Docker Compose** for self-hosted setups (web + worker + sqlite/postgres)
 - **systemd unit** for bare-metal deployments
+- **Fly.io / Railway / Koyeb** — same Dockerfile, same env vars; see `deploy/README.md`
 
 ### Cutting a release
 

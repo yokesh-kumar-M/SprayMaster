@@ -19,6 +19,7 @@ build
 .coverage
 htmlcov
 tests
+deploy
 npm/node_modules
 *.log
 .env*

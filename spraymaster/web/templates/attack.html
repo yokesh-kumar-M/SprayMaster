@@ -23,6 +23,8 @@
       <span>Attempts: <b id="cnt-attempts">0</b></span>
       <span class="success">Successes: <b id="cnt-success">{{ run.success_count }}</b></span>
       <span class="error">Errors: <b id="cnt-error">{{ run.error_count }}</b></span>
+      <span>Rate: <b id="cnt-rate">0</b> req/s</span>
+      <span>ETA: <b id="cnt-eta">—</b></span>
     </div>
   </div>
 
@@ -50,10 +52,34 @@
   const cntAttempts = document.getElementById("cnt-attempts");
   const cntSuccess = document.getElementById("cnt-success");
   const cntError   = document.getElementById("cnt-error");
+  const cntRate    = document.getElementById("cnt-rate");
+  const cntEta     = document.getElementById("cnt-eta");
   const findings   = document.getElementById("findings-body");
   const status     = document.getElementById("run-status");
 
   let total = 0, done = 0, ok = 0, err = 0;
+  let startedAt = null;
+
+  function fmtEta(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return "—";
+    if (seconds < 60) return Math.round(seconds) + "s";
+    const m = Math.floor(seconds / 60), s = Math.round(seconds % 60);
+    if (m < 60) return m + "m " + s + "s";
+    const h = Math.floor(m / 60), mm = m % 60;
+    return h + "h " + mm + "m";
+  }
+
+  function refreshRateEta() {
+    if (startedAt === null) return;
+    const elapsed = (Date.now() - startedAt) / 1000;
+    if (elapsed <= 0) return;
+    const rate = done / elapsed;
+    cntRate.textContent = rate.toFixed(1);
+    if (total > 0 && rate > 0) {
+      cntEta.textContent = fmtEta((total - done) / rate);
+    }
+  }
+  setInterval(refreshRateEta, 500);
 
   function append(line, cls) {
     const span = document.createElement("span");
@@ -76,6 +102,7 @@
     }
     if (e.type === "attack_start") {
       total = e.total;
+      startedAt = Date.now();
       append(`▶ ${e.protocol} attack started — ${e.total} attempts queued`, "muted");
       return;
     }
@@ -101,8 +128,9 @@
       return;
     }
     if (e.type === "attack_done") {
-      status.textContent = "done";
-      append(`■ Attack finished — ${e.successes} valid / ${e.total} attempts in ${e.duration.toFixed(1)}s`, "muted");
+      status.textContent = e.cancelled ? "cancelled" : "done";
+      cntEta.textContent = "—";
+      append(`■ Attack ${e.cancelled ? "cancelled" : "finished"} — ${e.successes} valid / ${e.total} attempts in ${e.duration.toFixed(1)}s`, "muted");
       ws.close();
     }
   };

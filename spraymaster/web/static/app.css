@@ -82,3 +82,8 @@ footer { max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; }
 .login-card h1 { margin: 0 0 0.5rem; color: var(--accent); }
 .login-card form { margin-top: 1rem; }
 .login-card button { width: 100%; margin-top: 1rem; }
+
+/* SAFE_DEMO banner */
+.demo-banner { background: rgba(76, 194, 255, 0.08); border: 1px solid var(--accent-strong); border-radius: 8px; padding: 0.9rem 1.1rem; margin-bottom: 1.25rem; color: var(--fg); line-height: 1.45; }
+.demo-banner strong { color: var(--accent); margin-right: 0.4rem; }
+.demo-banner code { background: var(--bg-input); padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.9em; }

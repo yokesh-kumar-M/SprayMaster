@@ -19,6 +19,15 @@
     </nav>
   </header>
   <main>
+    {% if safe_demo %}
+    <div class="demo-banner" role="status">
+      <strong>Demo mode</strong> — outbound attacks are disabled on this deployment.
+      The UI, history, API, and metrics are live so you can explore SprayMaster's
+      shape. To run real attacks against systems you are authorized to test,
+      install locally:
+      <code>pip install "spraymaster[web]" &amp;&amp; spraymaster-web</code>.
+    </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer>

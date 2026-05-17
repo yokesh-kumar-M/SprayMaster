@@ -22,6 +22,8 @@ def _args(**overrides):
         "port": None,
         "ssl": False,
         "proxy": None,
+        "max_rate": 0.0,
+        "per_host_rate": None,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
