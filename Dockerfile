@@ -43,7 +43,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 LABEL org.opencontainers.image.title="SprayMaster" \
       org.opencontainers.image.description="Multi-protocol network login auditor for authorized pentesting" \
       org.opencontainers.image.source="https://github.com/yokesh-kumar-M/SprayMaster" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="Apache-2.0"
 
 # Minimal runtime libs only (matching the build deps for native extensions).
 RUN apt-get update && apt-get install -y --no-install-recommends \

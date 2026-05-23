@@ -29,4 +29,4 @@ SPRAYMASTER_SKIP_PY_INSTALL=1 npm install -g spraymaster
 
 ## License
 
-MIT
+Apache 2.0 (as of v2.3.0; earlier published versions were MIT).

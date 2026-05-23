@@ -6,7 +6,7 @@ A highly concurrent, multi-protocol network login auditor and password-spraying 
 [![PyPI](https://img.shields.io/badge/PyPI-spraymaster-blue.svg)](https://pypi.org/project/spraymaster/)
 [![npm](https://img.shields.io/badge/npm-spraymaster-red.svg)](https://www.npmjs.com/package/spraymaster)
 [![Docker](https://img.shields.io/badge/ghcr-spraymaster-blue.svg)](https://ghcr.io/yokesh-kumar-m/spraymaster)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 ---
 
@@ -330,6 +330,15 @@ Adding a new protocol: drop a module under `spraymaster/protocols/` exposing `tr
 
 Issues and PRs welcome. Please run `pytest` and `ruff check spraymaster tests` before submitting.
 
+## Related projects
+
+Part of an authorised-pentest toolkit:
+
+- [PIIcasso](https://github.com/yokesh-kumar-M/Piicasso) — adversarial wordlist generator and PII intelligence platform. Generate target-aware wordlists, then feed them to SprayMaster.
+- [Clavis](https://github.com/yokesh-kumar-M/clavis) — HSM key-migration testbed with built-in VAPT suite (defender side).
+
 ## License
 
-[MIT](LICENSE) — see file for terms and the usage notice.
+[Apache License 2.0](LICENSE) — see file for terms and the authorised-testing-only usage notice.
+
+> **Note for downstream users:** SprayMaster `< 2.2.x` on PyPI / npm / GHCR was published under MIT. Releases tagged `2.3.0+` are under Apache 2.0 (adds an explicit patent grant; remains permissive).
